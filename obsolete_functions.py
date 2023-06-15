@@ -184,3 +184,10 @@ def reproject_points_solvePnPRefineLM(points_3d, K2, R_solvePnPRefineLM, tvec_re
     print('Print RMS error recoverPose: ' ,rms_error)
     print('Print RMS error solvePnP: ', rms_error_solvePnP)
     print('Print RMS error solvePnPRefineLM: ', rms_error_solvePnPRefineLM)
+
+    # UNDISTORT
+    keypoints1 = cv2.undistortPoints(np.expand_dims(keypoints1, axis=1), cameraMatrix=camera_matrix, distCoeffs=None)
+    keypoints2 = cv2.undistortPoints(np.expand_dims(keypoints2, axis=1), cameraMatrix=camera_matrix, distCoeffs=None)
+
+    # Estimate the essential matrix
+    E, mask = cv2.findEssentialMat(keypoints1, keypoints2, camera_matrix, method=cv2.RANSAC, prob=0.999, threshold=1)

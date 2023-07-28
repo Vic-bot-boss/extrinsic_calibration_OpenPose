@@ -24,6 +24,7 @@ except ImportError as e:
         'Error: OpenPose library could not be found. Did you enable `BUILD_PYTHON` in CMake and have this Python script in the right folder?')
     raise e
 
+### Camera parameters
 def load_camera_params(calib_file_path, cam_num_1, cam_num_2, cam_num_3, cam_num_4):
     """
     Load camera calibration parameters for a set of cameras from npz files
@@ -43,17 +44,79 @@ def load_camera_params(calib_file_path, cam_num_1, cam_num_2, cam_num_3, cam_num
     print(cameras)
     return cameras
 
-def extract_keypoints_pair1_517_518(images_pair1_517, images_pair1_518, opWrapper):
+### OpenPose keypoints extraction
+def extract_keypoints(images_cam1, images_cam2, opWrapper):
     """
     Extract keypoints and confidences for each image
     """
-    images_cam1 = images_pair1_517
-    images_cam2 = images_pair1_518
 
     keypoints_cam1 = []
     keypoints_cam2 = []
     confidences_cam1 = []
     confidences_cam2 = []
+
+    mapping = op.getPoseBodyPartMapping(op.PoseModel.BODY_25)
+    strings = np.array([value for value in mapping.values()]).reshape(-1, 1)[:-1]
+
+    # handle images from camera 1
+    for image in images_cam1:
+        img = cv2.imread(image)
+        datum = op.Datum()
+        datum.cvInputData = img
+        opWrapper.emplaceAndPop(op.VectorDatum([datum]))
+
+        keypoints = datum.poseKeypoints[0][:, :2]  # X, Y
+        confidence_scores = datum.poseKeypoints[0][:, 2].flatten()  # Confidence score each keypoint
+
+        # Create an array of IDs from 1 to 25 for camera 2
+        ids_cam1 = np.arange(1, 26).reshape(-1, 1)
+
+        keypoints_with_strings = np.hstack((keypoints, strings, confidence_scores.reshape(-1, 1), ids_cam1))  # append strings and confidence scores to keypoints
+        keypoints_cam1.append(keypoints_with_strings)
+
+        average_confidence = datum.poseScores[0]  # Average confidence
+        confidences_cam1.append(average_confidence)
+
+    # handle images from camera 2
+    for image in images_cam2:
+        img = cv2.imread(image)
+        datum = op.Datum()
+        datum.cvInputData = img
+        opWrapper.emplaceAndPop(op.VectorDatum([datum]))
+
+        keypoints = datum.poseKeypoints[0][:, :2]  # X, Y
+        confidence_scores = datum.poseKeypoints[0][:, 2].flatten()  # Confidence score each keypoint
+
+        # Create an array of IDs from 1 to 25 for camera 2
+        ids_cam2 = np.arange(1, 26).reshape(-1, 1)
+
+        keypoints_with_strings = np.hstack((keypoints, strings, confidence_scores.reshape(-1, 1), ids_cam2))  # append strings and confidence scores to keypoints
+        keypoints_cam2.append(keypoints_with_strings)
+
+        average_confidence = datum.poseScores[0]  # Average confidence
+        confidences_cam2.append(average_confidence)
+
+    # Transform the list of keypoints into arrays
+    keypoints1 = np.vstack(keypoints_cam1)
+    keypoints2 = np.vstack(keypoints_cam2)
+
+    confidences1 = np.array(confidences_cam1)
+    confidences2 = np.array(confidences_cam2)
+
+    return keypoints1, keypoints2, confidences1, confidences2
+def extract_keypoints_common(images_cam1, images_cam2, images_cam3, images_cam4, opWrapper):
+    """
+    Extract keypoints and confidences for each image
+    """
+
+    keypoints_cam1 = []
+    keypoints_cam2 = []
+    keypoints_cam3 = []
+    keypoints_cam4 = []
+    confidences_cam1 = []
+    confidences_cam2 = []
+    confidences_cam3 = []
+    confidences_cam4 = []
 
     mapping = op.getPoseBodyPartMapping(op.PoseModel.BODY_25)
     strings = np.array([value for value in mapping.values()]).reshape(-1, 1)[:-1]
@@ -90,32 +153,8 @@ def extract_keypoints_pair1_517_518(images_pair1_517, images_pair1_518, opWrappe
         average_confidence = datum.poseScores[0]  # Average confidence
         confidences_cam2.append(average_confidence)
 
-    # Transform the list of keypoints into arrays
-    keypoints1 = np.vstack(keypoints_cam1)
-    keypoints2 = np.vstack(keypoints_cam2)
-
-    confidences1 = np.array(confidences_cam1)
-    confidences2 = np.array(confidences_cam2)
-
-    return keypoints1, keypoints2, confidences1, confidences2
-
-def extract_keypoints_pair2_517_536(images_pair2_517, images_pair2_536, opWrapper):
-    """
-    Extract keypoints and confidences for each image
-    """
-
-    images_cam1 = images_pair2_517
-    images_cam2 = images_pair2_536
-    keypoints_cam1 = []
-    keypoints_cam2 = []
-    confidences_cam1 = []
-    confidences_cam2 = []
-
-    mapping = op.getPoseBodyPartMapping(op.PoseModel.BODY_25)
-    strings = np.array([value for value in mapping.values()]).reshape(-1, 1)[:-1]
-
-    # handle images from camera 1
-    for image in images_cam1:
+    # handle images from camera 3
+    for image in images_cam3:
         img = cv2.imread(image)
         datum = op.Datum()
         datum.cvInputData = img
@@ -125,92 +164,44 @@ def extract_keypoints_pair2_517_536(images_pair2_517, images_pair2_536, opWrappe
         confidence_scores = datum.poseKeypoints[0][:, 2].flatten()  # Confidence score each keypoint
 
         keypoints_with_strings = np.hstack((keypoints, strings, confidence_scores.reshape(-1, 1)))  # append strings and confidence scores to keypoints
-        keypoints_cam1.append(keypoints_with_strings)
+        keypoints_cam3.append(keypoints_with_strings)
 
         average_confidence = datum.poseScores[0]  # Average confidence
-        confidences_cam1.append(average_confidence)
+        confidences_cam3.append(average_confidence)
 
-    # handle images from camera 2
-    for image in images_cam2:
+    # handle images from camera 4
+    for image in images_cam4:
         img = cv2.imread(image)
         datum = op.Datum()
         datum.cvInputData = img
         opWrapper.emplaceAndPop(op.VectorDatum([datum]))
 
-        keypoints = datum.poseKeypoints[0][:, :2]  # X, Y
-        confidence_scores = datum.poseKeypoints[0][:, 2].flatten()  # Confidence score each keypoint
+        keypoints = datum.poseKeypoints[0][:, :2]
+        confidence_scores = datum.poseKeypoints[0][:, 2].flatten()
 
         keypoints_with_strings = np.hstack((keypoints, strings, confidence_scores.reshape(-1, 1)))  # append strings and confidence scores to keypoints
-        keypoints_cam2.append(keypoints_with_strings)
+        keypoints_cam4.append(keypoints_with_strings)
 
         average_confidence = datum.poseScores[0]  # Average confidence
-        confidences_cam2.append(average_confidence)
+        confidences_cam4.append(average_confidence)
+
+
 
     # Transform the list of keypoints into arrays
     keypoints1 = np.vstack(keypoints_cam1)
     keypoints2 = np.vstack(keypoints_cam2)
+    keypoints3 = np.vstack(keypoints_cam3)
+    keypoints4 = np.vstack(keypoints_cam4)
 
     confidences1 = np.array(confidences_cam1)
     confidences2 = np.array(confidences_cam2)
+    confidences3 = np.array(confidences_cam3)
+    confidences4 = np.array(confidences_cam4)
 
-    return keypoints1, keypoints2, confidences1, confidences2
+    return keypoints1, keypoints2, keypoints3, keypoints4, confidences1, confidences2, confidences3, confidences4
 
-def extract_keypoints_pair3_517_520(images_pair3_517, images_pair3_520, opWrapper):
-    """
-    Extract keypoints and confidences for each image
-    """
 
-    images_cam1 = images_pair3_517
-    images_cam2 = images_pair3_520
-    keypoints_cam1 = []
-    keypoints_cam2 = []
-    confidences_cam1 = []
-    confidences_cam2 = []
-
-    mapping = op.getPoseBodyPartMapping(op.PoseModel.BODY_25)
-    strings = np.array([value for value in mapping.values()]).reshape(-1, 1)[:-1]
-
-    # handle images from camera 1
-    for image in images_cam1:
-        img = cv2.imread(image)
-        datum = op.Datum()
-        datum.cvInputData = img
-        opWrapper.emplaceAndPop(op.VectorDatum([datum]))
-
-        keypoints = datum.poseKeypoints[0][:, :2]  # X, Y
-        confidence_scores = datum.poseKeypoints[0][:, 2].flatten()  # Confidence score each keypoint
-
-        keypoints_with_strings = np.hstack((keypoints, strings, confidence_scores.reshape(-1, 1)))  # append strings and confidence scores to keypoints
-        keypoints_cam1.append(keypoints_with_strings)
-
-        average_confidence = datum.poseScores[0]  # Average confidence
-        confidences_cam1.append(average_confidence)
-
-    # handle images from camera 2
-    for image in images_cam2:
-        img = cv2.imread(image)
-        datum = op.Datum()
-        datum.cvInputData = img
-        opWrapper.emplaceAndPop(op.VectorDatum([datum]))
-
-        keypoints = datum.poseKeypoints[0][:, :2]  # X, Y
-        confidence_scores = datum.poseKeypoints[0][:, 2].flatten()  # Confidence score each keypoint
-
-        keypoints_with_strings = np.hstack((keypoints, strings, confidence_scores.reshape(-1, 1)))  # append strings and confidence scores to keypoints
-        keypoints_cam2.append(keypoints_with_strings)
-
-        average_confidence = datum.poseScores[0]  # Average confidence
-        confidences_cam2.append(average_confidence)
-
-    # Transform the list of keypoints into arrays
-    keypoints1 = np.vstack(keypoints_cam1)
-    keypoints2 = np.vstack(keypoints_cam2)
-
-    confidences1 = np.array(confidences_cam1)
-    confidences2 = np.array(confidences_cam2)
-
-    return keypoints1, keypoints2, confidences1, confidences2
-
+### Charuco detection
 def detect_charuco_diamonds(images):
     """
     Detects Charuco diamonds in images and extracts 2D positions of ArUco IDs
@@ -270,7 +261,10 @@ def detect_charuco_diamonds(images):
 
     return charuco_corn1, charuco_corn2, aruco_ids_coords_all
 
-def filter_keypoints_pair1_517_518(keypoints_pair1_517, keypoints_pair1_518, threshold_pair1):
+
+### Filtering keypoints
+def filter_keypoints(keypoints1, keypoints2, threshold):
+
     """
     Filter keypoints based on the confidence score threshold and keep only the keypoints with matching IDs.
 
@@ -282,42 +276,8 @@ def filter_keypoints_pair1_517_518(keypoints_pair1_517, keypoints_pair1_518, thr
     Returns:
         np.ndarray, np.ndarray: Filtered keypoints arrays for keypoints1 and keypoints2 with matching IDs.
     """
-    keypoints1 = keypoints_pair1_517
-    keypoints2 = keypoints_pair1_518
-    threshold = threshold_pair1
 
-    confidence_scores1 = keypoints1[:, 3].astype(np.float64)
-    confidence_scores2 = keypoints2[:, 3].astype(np.float64)
-
-    # Filter by confidence score threshold
-    valid_keypoints1 = confidence_scores1 >= threshold
-    valid_keypoints2 = confidence_scores2 >= threshold
-
-    # Ensure the same keypoints are valid in both images
-    valid_keypoints = valid_keypoints1 & valid_keypoints2
-
-    filtered_keypoints1 = keypoints1[valid_keypoints, :2].astype(np.float64)
-    filtered_keypoints2 = keypoints2[valid_keypoints, :2].astype(np.float64)
-
-
-    return filtered_keypoints1, filtered_keypoints2
-
-def filter_keypoints_pair2_517_536(keypoints_pair2_517, keypoints_pair2_536, threshold_pair2):
-    """
-    Filter keypoints based on the confidence score threshold and keep only the keypoints with matching IDs.
-
-    Args:
-        keypoints1 (np.ndarray): First keypoints array with shape (N, 4) where N is the number of keypoints.
-        keypoints2 (np.ndarray): Second keypoints array with shape (N, 4) where N is the number of keypoints.
-        threshold (float): Confidence score threshold, keypoints with scores below this value will be removed.
-
-    Returns:
-        np.ndarray, np.ndarray: Filtered keypoints arrays for keypoints1 and keypoints2 with matching IDs.
-    """
-    keypoints1 = keypoints_pair2_517
-    keypoints2 = keypoints_pair2_536
-    threshold = threshold_pair2
-
+    # Extract confidence scores
     confidence_scores1 = keypoints1[:, 3].astype(np.float64)
     confidence_scores2 = keypoints2[:, 3].astype(np.float64)
 
@@ -332,8 +292,8 @@ def filter_keypoints_pair2_517_536(keypoints_pair2_517, keypoints_pair2_536, thr
     filtered_keypoints2 = keypoints2[valid_keypoints, :2].astype(np.float64)
 
     return filtered_keypoints1, filtered_keypoints2
+def filter_keypoints_common(keypoints1, keypoints2, keypoints3, keypoints4, threshold):
 
-def filter_keypoints_pair3_517_520(keypoints_pair3_517, keypoints_pair3_520, threshold_pair3):
     """
     Filter keypoints based on the confidence score threshold and keep only the keypoints with matching IDs.
 
@@ -345,189 +305,53 @@ def filter_keypoints_pair3_517_520(keypoints_pair3_517, keypoints_pair3_520, thr
     Returns:
         np.ndarray, np.ndarray: Filtered keypoints arrays for keypoints1 and keypoints2 with matching IDs.
     """
-    keypoints1 = keypoints_pair3_517
-    keypoints2 = keypoints_pair3_520
-    threshold = threshold_pair3
 
+    # Extract confidence scores
     confidence_scores1 = keypoints1[:, 3].astype(np.float64)
     confidence_scores2 = keypoints2[:, 3].astype(np.float64)
+    confidence_scores3 = keypoints3[:, 3].astype(np.float64)
+    confidence_scores4 = keypoints4[:, 3].astype(np.float64)
 
     # Filter by confidence score threshold
     valid_keypoints1 = confidence_scores1 >= threshold
     valid_keypoints2 = confidence_scores2 >= threshold
+    valid_keypoints3 = confidence_scores3 >= threshold
+    valid_keypoints4 = confidence_scores4 >= threshold
 
     # Ensure the same keypoints are valid in both images
-    valid_keypoints = valid_keypoints1 & valid_keypoints2
+    valid_keypoints = valid_keypoints1 & valid_keypoints2 & valid_keypoints3 & valid_keypoints4
 
     filtered_keypoints1 = keypoints1[valid_keypoints, :2].astype(np.float64)
     filtered_keypoints2 = keypoints2[valid_keypoints, :2].astype(np.float64)
+    filtered_keypoints3 = keypoints3[valid_keypoints, :2].astype(np.float64)
+    filtered_keypoints4 = keypoints4[valid_keypoints, :2].astype(np.float64)
 
-    return filtered_keypoints1, filtered_keypoints2
+    return filtered_keypoints1, filtered_keypoints2, filtered_keypoints3, filtered_keypoints4
 
-# recoverPose
-def estimate_relative_pose_pair1_517_518(cameras, filtered_keypoints_pair1_517, filtered_keypoints_pair1_518):
+
+### Pose estimation functions
+def estimate_recoverPose(cam1, cam2, keypoints1, keypoints2):
     """
     Estimate essential matrix and relative pose for a pair of cameras
     """
     # Extract intrinsic parameters - MAKE SURE THEY ARE FOR CORRECT CAMERAS
-    K1 = cameras[0]['matrix']
-    K2 = cameras[1]['matrix']
-    dist1 = cameras[0]['distortion']
-    dist2 = cameras[1]['distortion']
-
-    # Redefine the keypoints
-    keypoints1 = filtered_keypoints_pair1_517
-    keypoints2 = filtered_keypoints_pair1_518
+    K1 = cam1['matrix']
+    K2 = cam2['matrix']
+    dist1 = cam1['distortion']
+    dist2 = cam2['distortion']
 
     keypoints1 = keypoints1.reshape(-1, 2).astype(np.float64)
     keypoints2 = keypoints2.reshape(-1, 2).astype(np.float64)
 
-    _ ,E , R_recoverPose, t_recoverPose, _= cv2.recoverPose(keypoints1, keypoints2, K1,dist1, K2, dist2)
+    _ ,E , R_recoverPose, t_recoverPose, _= cv2.recoverPose(keypoints1, keypoints2, K1, dist1, K2, dist2)
 
     return R_recoverPose, t_recoverPose
-
-def estimate_relative_pose_pair2_517_536(cameras, filtered_keypoints_pair2_517, filtered_keypoints_pair2_536):
-    """
-    Estimate essential matrix and relative pose for a pair of cameras
-    """
-    # Extract intrinsic parameters - MAKE SURE THEY ARE FOR CORRECT CAMERAS
-    K1 = cameras[0]['matrix']
-    K2 = cameras[2]['matrix']
-    dist1 = cameras[0]['distortion']
-    dist2 = cameras[2]['distortion']
-
-    # Redefine the keypoints
-    keypoints1 = filtered_keypoints_pair2_517
-    keypoints2 = filtered_keypoints_pair2_536
-
-    keypoints1 = keypoints1.reshape(-1, 2).astype(np.float64)
-    keypoints2 = keypoints2.reshape(-1, 2).astype(np.float64)
-
-    _, E, R_recoverPose, t_recoverPose, _ = cv2.recoverPose(keypoints1, keypoints2, K1, dist1, K2, dist2)
-
-    return R_recoverPose, t_recoverPose
-
-def estimate_relative_pose_pair3_517_520(cameras, filtered_keypoints_pair3_517, filtered_keypoints_pair3_520):
-    """
-    Estimate essential matrix and relative pose for a pair of cameras
-    """
-    # Extract intrinsic parameters - MAKE SURE THEY ARE FOR CORRECT CAMERAS
-    K1 = cameras[0]['matrix']
-    K2 = cameras[3]['matrix']
-    dist1 = cameras[0]['distortion']
-    dist2 = cameras[3]['distortion']
-
-    # Redefine the keypoints
-    keypoints1 = filtered_keypoints_pair3_517
-    keypoints2 = filtered_keypoints_pair3_520
-
-    keypoints1 = keypoints1.reshape(-1, 2).astype(np.float64)
-    keypoints2 = keypoints2.reshape(-1, 2).astype(np.float64)
-
-    _, E, R_recoverPose, t_recoverPose, _ = cv2.recoverPose(keypoints1, keypoints2, K1, dist1, K2, dist2)
-
-    return R_recoverPose, t_recoverPose
-
-# Triangulation
-def triangulate_points_pair1_517_518(R_recoverPose_pair1_517_518, t_recoverPose_pair1_517_518, filtered_keypoints_pair1_517, filtered_keypoints_pair1_518):
-
-    K1 = cameras[0]['matrix']
-    K2 = cameras[1]['matrix']
-    dist1 = cameras[0]['distortion']
-    dist2 = cameras[1]['distortion']
-
-    filtered_keypoints1 = filtered_keypoints_pair1_517
-    filtered_keypoints2 = filtered_keypoints_pair1_518
-    R_recoverPose = R_recoverPose_pair1_517_518
-    t_recoverPose = t_recoverPose_pair1_517_518
-
-    # Step 1: Construct the projection matrices for the two cameras
-    P1 = np.dot(K1, np.hstack((np.eye(3), np.zeros((3, 1))))) # [I|0] for the first camera
-    P2 = np.dot(K2, np.hstack((R_recoverPose, t_recoverPose))) # [R|t] for the second camera
-
-    # Step 2: Unpack the keypoint matches to separate arrays
-    points1 = np.float64(filtered_keypoints1).reshape(-1, 2).T
-    points2 = np.float64(filtered_keypoints2).reshape(-1, 2).T
-
-    # Step 3: Call the triangulatePoints function
-    homogeneous_3d_points = cv2.triangulatePoints(P1, P2, points1, points2)
-
-    # Step 4: Convert the points from homogeneous to euclidean coordinates
-    euclidean_3d_points = homogeneous_3d_points[:3, :] / homogeneous_3d_points[3, :]
-
-    # Step 5: Reshape the points to a Nx3 array
-    triangulated_points = euclidean_3d_points.T
-
-    return triangulated_points
-
-def triangulate_points_pair2_517_536(R_recoverPose_pair2_517_536, t_recoverPose_pair2_517_536, filtered_keypoints_pair2_517, filtered_keypoints_pair2_536):
-
-    K1 = cameras[0]['matrix']
-    K2 = cameras[2]['matrix']
-    dist1 = cameras[0]['distortion']
-    dist2 = cameras[2]['distortion']
-
-    filtered_keypoints1 = filtered_keypoints_pair2_517
-    filtered_keypoints2 = filtered_keypoints_pair2_536
-    R_recoverPose = R_recoverPose_pair2_517_536
-    t_recoverPose = t_recoverPose_pair2_517_536
-
-    # Step 1: Construct the projection matrices for the two cameras
-    P1 = np.dot(K1, np.hstack((np.eye(3), np.zeros((3, 1))))) # [I|0] for the first camera
-    P2 = np.dot(K2, np.hstack((R_recoverPose, t_recoverPose))) # [R|t] for the second camera
-
-    # Step 2: Unpack the keypoint matches to separate arrays
-    points1 = np.float64(filtered_keypoints1).reshape(-1, 2).T
-    points2 = np.float64(filtered_keypoints2).reshape(-1, 2).T
-
-    # Step 3: Call the triangulatePoints function
-    homogeneous_3d_points = cv2.triangulatePoints(P1, P2, points1, points2)
-
-    # Step 4: Convert the points from homogeneous to euclidean coordinates
-    euclidean_3d_points = homogeneous_3d_points[:3, :] / homogeneous_3d_points[3, :]
-
-    # Step 5: Reshape the points to a Nx3 array
-    triangulated_points = euclidean_3d_points.T
-
-    return triangulated_points
-
-def triangulate_points_pair3_517_520(R_recoverPose_pair3_517_520, t_recoverPose_pair3_517_520, filtered_keypoints_pair3_517, filtered_keypoints_pair3_520):
-
-    K1 = cameras[0]['matrix']
-    K2 = cameras[3]['matrix']
-    dist1 = cameras[0]['distortion']
-    dist2 = cameras[3]['distortion']
-
-    filtered_keypoints1 = filtered_keypoints_pair3_517
-    filtered_keypoints2 = filtered_keypoints_pair3_520
-    R_recoverPose = R_recoverPose_pair3_517_520
-    t_recoverPose = t_recoverPose_pair3_517_520
-
-    # Step 1: Construct the projection matrices for the two cameras
-    P1 = np.dot(K1, np.hstack((np.eye(3), np.zeros((3, 1))))) # [I|0] for the first camera
-    P2 = np.dot(K2, np.hstack((R_recoverPose, t_recoverPose))) # [R|t] for the second camera
-
-    # Step 2: Unpack the keypoint matches to separate arrays
-    points1 = np.float64(filtered_keypoints1).reshape(-1, 2).T
-    points2 = np.float64(filtered_keypoints2).reshape(-1, 2).T
-
-    # Step 3: Call the triangulatePoints function
-    homogeneous_3d_points = cv2.triangulatePoints(P1, P2, points1, points2)
-
-    # Step 4: Convert the points from homogeneous to euclidean coordinates
-    euclidean_3d_points = homogeneous_3d_points[:3, :] / homogeneous_3d_points[3, :]
-
-    # Step 5: Reshape the points to a Nx3 array
-    triangulated_points = euclidean_3d_points.T
-
-    return triangulated_points
-def estimate_solvePnP(triangulated_points, filtered_keypoints2, cameras):
+def estimate_solvePnP(triangulated_points, filtered_keypoints2, cam2):
     # Using OpenCV's solvePnP function to estimate pose.
 
     # Extract intrinsic parameters
-    K1 = cameras[0]['matrix']
-    K2 = cameras[1]['matrix']
-    dist = cameras[1]['distortion']
+    K2 = cam2['matrix']
+    dist = cam2['distortion']
 
     # Processing data for solvePnP
     triangulated_points = triangulated_points[:, :3]
@@ -542,48 +366,44 @@ def estimate_solvePnP(triangulated_points, filtered_keypoints2, cameras):
 
     # Returning the estimated rotation matrix and translation vector.
     return R_solvePnP, tvec_solvePnP
-
-def estimate_solvePnPRansac(points_3d, filtered_keypoints2, cameras):
+def estimate_solvePnPRansac(triangulated_points, filtered_keypoints2, cam2):
     # Using OpenCV's solvePnPRansac function to estimate pose.
 
     # Extract intrinsic parameters
-    K1 = cameras[0]['matrix']
-    K2 = cameras[1]['matrix']
-    dist = cameras[1]['distortion']
+    K2 = cam2['matrix']
+    dist = cam2['distortion']
 
-    # Processing data for solvePnPRansac
-    points_3d = points_3d[:, :3]
-    points_3d = np.float64(points_3d)
+    # Processing data for solvePnP
+    triangulated_points = triangulated_points[:, :3]
+    triangulated_points = np.float64(triangulated_points)
     filtered_keypoints2 = np.float64(filtered_keypoints2)
 
+
     # Solving PnPRansac
-    ret, rvec, tvec_solvePnPRansac, inliers = cv2.solvePnPRansac(points_3d, filtered_keypoints2, K2, distCoeffs=dist)
+    ret, rvec, tvec_solvePnPRansac, inliers = cv2.solvePnPRansac(triangulated_points, filtered_keypoints2, K2, distCoeffs=dist)
 
     # Converting the rotation vector to a rotation matrix.
     R_solvePnPRansac, _ = cv2.Rodrigues(rvec)
 
     # Returning the estimated rotation matrix and translation vector.
     return R_solvePnPRansac, tvec_solvePnPRansac
-def estimate_solvePnPRefineLM_pair1_517_518(triangulated_points_pair1_517_518, filtered_keypoints_pair1_518, cameras):
+def estimate_solvePnPRefineLM(triangulated_points, filtered_keypoints2, cam2):
     # Using OpenCV's solvePnPRefineLM function to estimate pose.
 
     # Extract intrinsic parameters
-    K2 = cameras[1]['matrix']
-    dist2 = cameras[1]['distortion']
+    K2 = cam2['matrix']
+    dist = cam2['distortion']
 
-    points_3d = triangulated_points_pair1_517_518
-    filtered_keypoints2 = filtered_keypoints_pair1_518
-
-    # Processing data for solvePnPRefineLM
-    points_3d = points_3d[:, :3]
-    points_3d = np.float64(points_3d)
+    # Processing data for solvePnP
+    triangulated_points = triangulated_points[:, :3]
+    triangulated_points = np.float64(triangulated_points)
     filtered_keypoints2 = np.float64(filtered_keypoints2)
 
     # Initial pose estimation with solvePnP
-    _, rvec_init, tvec_init = cv2.solvePnP(points_3d, filtered_keypoints2, K2, distCoeffs=dist2)
+    _, rvec_init, tvec_init = cv2.solvePnP(triangulated_points, filtered_keypoints2, K2, distCoeffs=dist)
 
     # Refine pose estimation with solvePnPRefineLM
-    rvec_refined, tvec_refined = cv2.solvePnPRefineLM(points_3d, filtered_keypoints2, K2, distCoeffs=dist2, rvec=rvec_init, tvec=tvec_init)
+    rvec_refined, tvec_refined = cv2.solvePnPRefineLM(triangulated_points, filtered_keypoints2, K2, distCoeffs=dist, rvec=rvec_init, tvec=tvec_init)
 
     # Converting the rotation vector to a rotation matrix.
     R_solvePnPRefineLM, _ = cv2.Rodrigues(rvec_refined)
@@ -591,105 +411,45 @@ def estimate_solvePnPRefineLM_pair1_517_518(triangulated_points_pair1_517_518, f
     # Returning the estimated rotation matrix and translation vector.
     return R_solvePnPRefineLM, tvec_refined
 
-def estimate_solvePnPRefineLM_pair2_517_536( triangulated_points_pair2_517_536, filtered_keypoints_pair2_536, cameras):
-    # Using OpenCV's solvePnPRefineLM function to estimate pose.
 
-    # Extract intrinsic parameters
-    K2 = cameras[2]['matrix']
-    dist2 = cameras[2]['distortion']
+### Triangulation
+def triangulate_points(cam1, cam2, filtered_keypoints1, filtered_keypoints2, R_recoverPose, t_recoverPose):
+    # Extract intrinsic parameters - MAKE SURE THEY ARE FOR CORRECT CAMERAS
+    K1 = cam1['matrix']
+    K2 = cam2['matrix']
+    dist1 = cam1['distortion']
+    dist2 = cam2['distortion']
 
-    points_3d = triangulated_points_pair2_517_536
-    filtered_keypoints2 = filtered_keypoints_pair2_536
+    # Step 1: Construct the projection matrices for the two cameras
+    P1 = np.dot(K1, np.hstack((np.eye(3), np.zeros((3, 1))))) # [I|0] for the first camera
+    P2 = np.dot(K2, np.hstack((R_recoverPose, t_recoverPose))) # [R|t] for the second camera
 
-    # Processing data for solvePnPRefineLM
-    points_3d = points_3d[:, :3]
-    points_3d = np.float64(points_3d)
-    filtered_keypoints2 = np.float64(filtered_keypoints2)
+    # Step 2: Unpack the keypoint matches to separate arrays
+    points1 = np.float64(filtered_keypoints1).reshape(-1, 2).T
+    points2 = np.float64(filtered_keypoints2).reshape(-1, 2).T
 
-    # Initial pose estimation with solvePnP
-    _, rvec_init, tvec_init = cv2.solvePnP(points_3d, filtered_keypoints2, K2, distCoeffs=dist2)
+    # Step 3: Call the triangulatePoints function
+    homogeneous_3d_points = cv2.triangulatePoints(P1, P2, points1, points2)
 
-    # Refine pose estimation with solvePnPRefineLM
-    rvec_refined, tvec_refined = cv2.solvePnPRefineLM(points_3d, filtered_keypoints2, K2, distCoeffs=dist2,
-                                                      rvec=rvec_init, tvec=tvec_init)
+    # Step 4: Convert the points from homogeneous to euclidean coordinates
+    euclidean_3d_points = homogeneous_3d_points[:3, :] / homogeneous_3d_points[3, :]
 
-    # Converting the rotation vector to a rotation matrix.
-    R_solvePnPRefineLM, _ = cv2.Rodrigues(rvec_refined)
+    # Step 5: Reshape the points to a Nx3 array
+    triangulated_points = euclidean_3d_points.T
 
-    # Returning the estimated rotation matrix and translation vector.
-    return R_solvePnPRefineLM, tvec_refined
+    return triangulated_points
 
-def estimate_solvePnPRefineLM_pair3_517_520( triangulated_points_pair3_517_520, filtered_keypoints_pair3_520, cameras):
-    # Using OpenCV's solvePnPRefineLM function to estimate pose.
 
-    # Extract intrinsic parameters
-    K2 = cameras[3]['matrix']
-    dist2 = cameras[3]['distortion']
-
-    points_3d = triangulated_points_pair3_517_520
-    filtered_keypoints2 = filtered_keypoints_pair3_520
-
-    # Processing data for solvePnPRefineLM
-    points_3d = points_3d[:, :3]
-    points_3d = np.float64(points_3d)
-    filtered_keypoints2 = np.float64(filtered_keypoints2)
-
-    # Initial pose estimation with solvePnP
-    _, rvec_init, tvec_init = cv2.solvePnP(points_3d, filtered_keypoints2, K2, distCoeffs=dist2)
-
-    # Refine pose estimation with solvePnPRefineLM
-    rvec_refined, tvec_refined = cv2.solvePnPRefineLM(points_3d, filtered_keypoints2, K2, distCoeffs=dist2,rvec=rvec_init, tvec=tvec_init)
-
-    # Converting the rotation vector to a rotation matrix.
-    R_solvePnPRefineLM, _ = cv2.Rodrigues(rvec_refined)
-
-    # Returning the estimated rotation matrix and translation vector.
-    return R_solvePnPRefineLM, tvec_refined
-
-# Reprojections
-def calculate_reprojection_error_solvePnPRefine_pair1_517_518(triangulated_points_pair1_517_518, filtered_keypoints_pair1_518, R_solvePnPRefineLM_pair1_517_518, tvec_refined_pair1_517_518, cameras):
-
-    K2 = cameras[1]['matrix']
-    dist = cameras[1]['distortion']
-    filtered_keypoints2 = filtered_keypoints_pair1_518
-    triangulated_points = triangulated_points_pair1_517_518
-    R_recoverPose = R_solvePnPRefineLM_pair1_517_518
-    t_recoverPose = tvec_refined_pair1_517_518
+### Reprojections
+def calculate_reprojection_error(cam2, triangulated_points, filtered_keypoints_cam2, rot, tvec):
+    K2 = cam2['matrix']
+    dist = cam2['distortion']
 
     # Project the 3D object points back onto the image plane
-    projected_points, _ = cv2.projectPoints(triangulated_points, R_recoverPose,t_recoverPose, K2, dist)
+    projected_points, _ = cv2.projectPoints(triangulated_points, rot, tvec, K2, dist)
 
     # Compute the difference between the original and projected 2D points
-    reprojection_error = filtered_keypoints2 - projected_points.reshape(-1, 2)
-
-    # Square the errors
-    squared_errors = reprojection_error**2
-
-    # Compute the sum of the squared errors
-    sum_of_squared_errors = np.sum(squared_errors)
-
-    # Compute the mean squared error
-    mean_squared_error = sum_of_squared_errors / np.prod(squared_errors.shape)
-
-    # Compute the root mean square (RMS) reprojection error
-    rms_reprojection_error = np.sqrt(mean_squared_error)
-
-    return rms_reprojection_error, projected_points
-
-def calculate_reprojection_error_solvePnPRefine_pair2_517_536(triangulated_points_pair2_517_536, filtered_keypoints_pair2_536, R_solvePnPRefineLM_pair2_517_536, tvec_refined_pair2_517_536, cameras):
-
-    K2 = cameras[2]['matrix']
-    dist = cameras[2]['distortion']
-    filtered_keypoints2 = filtered_keypoints_pair2_536
-    triangulated_points = triangulated_points_pair2_517_536
-    R_recoverPose = R_solvePnPRefineLM_pair2_517_536
-    t_recoverPose = tvec_refined_pair2_517_536
-
-    # Project the 3D object points back onto the image plane
-    projected_points, _ = cv2.projectPoints(triangulated_points, R_recoverPose,t_recoverPose, K2, dist)
-
-    # Compute the difference between the original and projected 2D points
-    reprojection_error = filtered_keypoints2 - projected_points.reshape(-1, 2)
+    reprojection_error = filtered_keypoints_cam2 - projected_points.reshape(-1, 2)
 
     # Square the errors
     squared_errors = reprojection_error**2
@@ -705,111 +465,8 @@ def calculate_reprojection_error_solvePnPRefine_pair2_517_536(triangulated_point
 
     return rms_reprojection_error
 
-def calculate_reprojection_error_solvePnPRefine_pair3_517_520(triangulated_points_pair3_517_520, filtered_keypoints_pair3_520, R_solvePnPRefineLM_pair3_517_520, tvec_refined_pair3_517_520, cameras):
 
-    K2 = cameras[3]['matrix']
-    dist = cameras[3]['distortion']
-    filtered_keypoints2 = filtered_keypoints_pair3_520
-    triangulated_points = triangulated_points_pair3_517_520
-    R_recoverPose = R_solvePnPRefineLM_pair3_517_520
-    t_recoverPose = tvec_refined_pair3_517_520
-
-    # Project the 3D object points back onto the image plane
-    projected_points, _ = cv2.projectPoints(triangulated_points, R_recoverPose,t_recoverPose, K2, dist)
-
-    # Compute the difference between the original and projected 2D points
-    reprojection_error = filtered_keypoints2 - projected_points.reshape(-1, 2)
-
-    # Square the errors
-    squared_errors = reprojection_error**2
-
-    # Compute the sum of the squared errors
-    sum_of_squared_errors = np.sum(squared_errors)
-
-    # Compute the mean squared error
-    mean_squared_error = sum_of_squared_errors / np.prod(squared_errors.shape)
-
-    # Compute the root mean square (RMS) reprojection error
-    rms_reprojection_error = np.sqrt(mean_squared_error)
-
-    return rms_reprojection_error
-
-def calculate_reprojection_error_solvePnP(triangulated_points, filtered_keypoints2, R_solvePnP, tvec_solvePnP, cameras):
-    K1 = cameras[0]['matrix']
-    K2 = cameras[1]['matrix']
-    dist = cameras[1]['distortion']
-
-    # Project the 3D object points back onto the image plane
-    projected_points, _ = cv2.projectPoints(triangulated_points, R_solvePnP,tvec_solvePnP, K2, dist)
-
-    # Compute the difference between the original and projected 2D points
-    reprojection_error = filtered_keypoints2 - projected_points.reshape(-1, 2)
-
-    # Square the errors
-    squared_errors = reprojection_error**2
-
-    # Compute the sum of the squared errors
-    sum_of_squared_errors = np.sum(squared_errors)
-
-    # Compute the mean squared error
-    mean_squared_error = sum_of_squared_errors / np.prod(squared_errors.shape)
-
-    # Compute the root mean square (RMS) reprojection error
-    rms_reprojection_error = np.sqrt(mean_squared_error)
-
-    return rms_reprojection_error
-
-def calculate_reprojection_error_solvePnPRansac(triangulated_points, filtered_keypoints2, R_solvePnPRansac, tvec_solvePnPRansac, cameras):
-    K1 = cameras[0]['matrix']
-    K2 = cameras[1]['matrix']
-    dist = cameras[1]['distortion']
-
-    # Project the 3D object points back onto the image plane
-    projected_points, _ = cv2.projectPoints(triangulated_points, R_solvePnPRansac,tvec_solvePnPRansac, K2, dist)
-
-    # Compute the difference between the original and projected 2D points
-    reprojection_error = filtered_keypoints2 - projected_points.reshape(-1, 2)
-
-    # Square the errors
-    squared_errors = reprojection_error**2
-
-    # Compute the sum of the squared errors
-    sum_of_squared_errors = np.sum(squared_errors)
-
-    # Compute the mean squared error
-    mean_squared_error = sum_of_squared_errors / np.prod(squared_errors.shape)
-
-    # Compute the root mean square (RMS) reprojection error
-    rms_reprojection_error = np.sqrt(mean_squared_error)
-
-    return rms_reprojection_error
-
-def calculate_reprojection_error_solvePnPLM(triangulated_points, filtered_keypoints2, R_solvePnPRefineLM, tvec_refined, cameras):
-    K1 = cameras[0]['matrix']
-    K2 = cameras[1]['matrix']
-    dist = cameras[1]['distortion']
-
-    # Project the 3D object points back onto the image plane
-    projected_points, _ = cv2.projectPoints(triangulated_points, R_solvePnPRefineLM, tvec_refined, K2, dist)
-
-    # Compute the difference between the original and projected 2D points
-    reprojection_error = filtered_keypoints2 - projected_points.reshape(-1, 2)
-
-    # Square the errors
-    squared_errors = reprojection_error**2
-
-    # Compute the sum of the squared errors
-    sum_of_squared_errors = np.sum(squared_errors)
-
-    # Compute the mean squared error
-    mean_squared_error = sum_of_squared_errors / np.prod(squared_errors.shape) #  np.prod(squared_errors.shape) gives the total number of elements in the array
-
-    # Compute the root mean square (RMS) reprojection error
-    rms_reprojection_error = np.sqrt(mean_squared_error)
-
-    return rms_reprojection_error
-
-
+### Visualization
 def visualize_3d_points(triangulated_points):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -874,6 +531,81 @@ def visualize_reprojection_error_heatmap(initial_points, reprojected_points):
     # Show the plot
     plt.show()
 
+def scale_translation(tvec, real_distance_cm):
+    print(tvec)
+    estimated_distance = np.linalg.norm(tvec)
+    print(estimated_distance)
+    scale_factor = real_distance_cm / estimated_distance
+
+    # Scale the translation vector
+    tvec = tvec * scale_factor
+
+    return scale_factor, tvec
+
+def decompose_rotation(R):
+    rot_decomp, _, _, _, _, _ = cv2.RQDecomp3x3(R)
+    return rot_decomp
+
+def invert_transformation(R, t):
+    T = np.zeros((4, 4))
+    T[0:3, 0:3] = R_recoverPose_pair2
+    T[0:3, 3] = t_recoverPose_pair2.ravel()
+    T[3, 3] = 1
+    T_inv = np.linalg.inv(T)
+    R_inv = T_inv[:3, :3]  # Rotation matrix is the top-left 3x3 submatrix
+    t_inv = T_inv[:3, 3]  # Translation vector is the right-most column
+
+    return R_inv, t_inv
+def draw_openpose_skeleton(image, keypoints):
+    # Define colors for drawing keypoints
+    colors = [
+        (255, 0, 0), (255, 85, 0), (255, 170, 0), (255, 255, 0),
+        (170, 255, 0), (85, 255, 0), (0, 255, 0), (0, 255, 85),
+        (0, 255, 170), (0, 255, 255), (0, 170, 255), (0, 85, 255),
+        (0, 0, 255), (85, 0, 255), (170, 0, 255), (255, 0, 255),
+        (255, 0, 170), (255, 0, 85), (255, 85, 85), (255, 85, 0),
+        (255, 170, 0), (255, 170, 85), (255, 170, 170), (255, 255, 170),
+        (170, 255, 170), (85, 255, 170), (85, 255, 255), (170, 255, 255)
+    ]
+
+    # Iterate over keypoints
+    for point in keypoints:
+        # Get the x, y coordinates of the keypoint
+        x = int(float(point[0]))
+        y = int(float(point[1]))
+
+        # Draw circle for the keypoint
+        cv2.circle(image, (x, y), 4, (0, 0, 255), -1)
+
+    return image
+
+
+def overlay_images(image_paths, keypoints):
+    transparency = 0.5
+    # Load the first image as the base image
+    base_image = cv2.imread(image_paths[0])
+
+    # Iterate over the remaining images
+    for path in image_paths[1:]:
+        # Read the next image
+        next_image = cv2.imread(path)
+
+        # Resize the next image to match the base image size
+        next_image = cv2.resize(next_image, (base_image.shape[1], base_image.shape[0]))
+
+        # Apply transparency to the next image
+        overlay = cv2.addWeighted(base_image, 1 - transparency, next_image, transparency, 0)
+
+        # Set the overlay as the new base image for the next iteration
+        base_image = overlay
+
+    # Draw the OpenPose skeleton on the final image
+    final_image_with_skeleton = draw_openpose_skeleton(base_image, keypoints)
+
+    # Display the overlayed image with skeleton
+    cv2.imshow('Overlay with Skeleton', final_image_with_skeleton)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 def visualize_reprojection_error_scatter(initial_points, reprojected_points):
     # Compute the Euclidean distance between initial points and reprojected points
     errors = np.linalg.norm(initial_points - reprojected_points, axis=1)
@@ -924,11 +656,6 @@ def getHomography(
     )
     return h
 
-
-
-
-
-
 if __name__ == '__main__':
     parser = ArgumentParser(description="Pairwise camera calibration using OpenPose")
 
@@ -936,11 +663,18 @@ if __name__ == '__main__':
     parser.add_argument("--image_path_pair2_517_536", type=str, default="data/Calibration_sets/517_536/",help="Path to the directory containing input images")
     parser.add_argument("--image_path_pair3_517_520", type=str, default="data/Calibration_sets/517_520/",help="Path to the directory containing input images")
 
+    parser.add_argument("--image_path_common", type=str, default="data/Calibration_sets/common_correspondence/",help="Path to the directory containing input images")
+    parser.add_argument("--image_path_cam2_cam3", type=str, default="data/Calibration_sets/518_536/",help="Path to the directory containing input images")
+
     parser.add_argument("--calib_path", type=str, default="data/intrinsic/", help="Path to the directory containing calibration files")
     args = parser.parse_args()
 
     # Load camera calibration parameters for each camera
     cameras = load_camera_params(args.calib_path, 517,518,536,520) # pick which camera pair you are calibrating
+    cam517 = cameras[0]
+    cam518 = cameras[1]
+    cam536 = cameras[2]
+    cam520 = cameras[3]
     print('Intrinsics loaded!')
 
     # Load OpenPose
@@ -949,13 +683,9 @@ if __name__ == '__main__':
     opWrapper = op.WrapperPython()
     opWrapper.configure(params)
     opWrapper.start()
+    print('OpenPose loaded!')
 
-    # Load images and extract keypoints for each camera pair from cam1 to cam2,3,4
-    # images_cam517 = sorted(glob(f"{args.image_path}/517*.png"))
-    # images_cam518 = sorted(glob(f"{args.image_path}/518*.png"))
-    # images_cam536 = sorted(glob(f"{args.image_path}/536*.png"))
-    # images_cam520 = sorted(glob(f"{args.image_path}/520*.png"))
-
+    # Load images
     images_pair1_517 = sorted(glob(f"{args.image_path_pair1_517_518}/517*.png"))
     images_pair1_518 = sorted(glob(f"{args.image_path_pair1_517_518}/518*.png"))
 
@@ -965,119 +695,312 @@ if __name__ == '__main__':
     images_pair3_517 = sorted(glob(f"{args.image_path_pair3_517_520}/517*.png"))
     images_pair3_520 = sorted(glob(f"{args.image_path_pair3_517_520}/520*.png"))
 
-    keypoints_pair1_517, keypoints_pair1_518, confidences_pair1_517, confidences_pair1_518 = extract_keypoints_pair1_517_518(images_pair1_517, images_pair1_518, opWrapper)
-    keypoints_pair2_517, keypoints_pair2_536, confidences_pair2_517, confidences_pair2_536 = extract_keypoints_pair2_517_536(images_pair2_517, images_pair2_536, opWrapper)
-    keypoints_pair3_517, keypoints_pair3_520, confidences_pair3_517, confidences_pair3_520 = extract_keypoints_pair3_517_520(images_pair3_517,images_pair3_520, opWrapper)
-    print('Keypoints extracted for all pairs!')
+    print('Approach 1-2, 1-3, 1-4 #############################################################################################################')
+    # Extract keypoints for the pair 1 using the extract_keypoints() function
+    keypoints_pair1_517, keypoints_pair1_518, confidences_pair1_517, confidences_pair1_518 = extract_keypoints(images_pair1_517, images_pair1_518, opWrapper)
+    keypoints_pair2_517, keypoints_pair2_536, confidences_pair2_517, confidences_pair2_536 = extract_keypoints(images_pair2_517, images_pair2_536, opWrapper)
+    keypoints_pair3_517, keypoints_pair3_520, confidences_pair3_517, confidences_pair3_520 = extract_keypoints(images_pair3_517,images_pair3_520, opWrapper)
 
-    # Filter keypoints based on confidence level and presence in both keypoint sets from cam1 to cam2,3,4
-    threshold_pair1 = 0.7
-    threshold_pair2 = 0.75
+    # Apply filtering to the extracted keypoints with the specific threshold
+    threshold_pair1 = 0.5
+    threshold_pair2 = 0.6
     threshold_pair3 = 0.7
 
-    filtered_keypoints_pair1_517, filtered_keypoints_pair1_518 = filter_keypoints_pair1_517_518(keypoints_pair1_517, keypoints_pair1_518, threshold_pair1)
-    filtered_keypoints_pair2_517, filtered_keypoints_pair2_536 = filter_keypoints_pair2_517_536(keypoints_pair2_517, keypoints_pair2_536, threshold_pair2)
-    filtered_keypoints_pair3_517, filtered_keypoints_pair3_520 = filter_keypoints_pair3_517_520(keypoints_pair3_517, keypoints_pair3_520, threshold_pair3)
-    print('Keypoints filtered for all pairs!')
+    filtered_keypoints_pair1_517, filtered_keypoints_pair1_518 = filter_keypoints(keypoints_pair1_517, keypoints_pair1_518, threshold_pair1)
+    filtered_keypoints_pair2_517, filtered_keypoints_pair2_536 = filter_keypoints(keypoints_pair2_517, keypoints_pair2_536, threshold_pair2)
+    filtered_keypoints_pair3_517, filtered_keypoints_pair3_520 = filter_keypoints(keypoints_pair3_517, keypoints_pair3_520, threshold_pair3)
 
-    # Estimate relative pose for each camera pair
-    R_recoverPose_pair1_517_518, t_recoverPose_pair1_517_518 = estimate_relative_pose_pair1_517_518(cameras, filtered_keypoints_pair1_517, filtered_keypoints_pair1_518)
-    R_recoverPose_pair2_517_536, t_recoverPose_pair2_517_536 = estimate_relative_pose_pair2_517_536(cameras, filtered_keypoints_pair2_517, filtered_keypoints_pair2_536)
-    R_recoverPose_pair3_517_520, t_recoverPose_pair3_517_520 = estimate_relative_pose_pair3_517_520(cameras, filtered_keypoints_pair3_517, filtered_keypoints_pair3_520)
-    print('recoverPose successful for all pairs!')
+    # Estimate relative position using the filtered keypoints
+    R_recoverPose_pair1, t_recoverPose_pair1 = estimate_recoverPose(cam517, cam518, filtered_keypoints_pair1_517, filtered_keypoints_pair1_518)
+    R_recoverPose_pair2, t_recoverPose_pair2 = estimate_recoverPose(cam517, cam536, filtered_keypoints_pair2_517, filtered_keypoints_pair2_536)
+    R_recoverPose_pair3, t_recoverPose_pair3 = estimate_recoverPose(cam517, cam520, filtered_keypoints_pair3_517, filtered_keypoints_pair3_520)
 
-    """ Triangulation """#################
-    # Assuming K1, K2, R, t, filtered_keypoints1, and filtered_keypoints2 are defined
-    triangulated_points_pair1_517_518 = triangulate_points_pair1_517_518(R_recoverPose_pair1_517_518, t_recoverPose_pair1_517_518, filtered_keypoints_pair1_517, filtered_keypoints_pair1_518)
-    triangulated_points_pair2_517_536 = triangulate_points_pair2_517_536(R_recoverPose_pair2_517_536, t_recoverPose_pair2_517_536, filtered_keypoints_pair2_517, filtered_keypoints_pair2_536)
-    triangulated_points_pair3_517_520 = triangulate_points_pair3_517_520(R_recoverPose_pair3_517_520, t_recoverPose_pair3_517_520, filtered_keypoints_pair3_517, filtered_keypoints_pair3_520)
-    print('Triangulation successful for all pairs!')
+    # Triangulate the points
+    points_pair1 = triangulate_points(cam517, cam518, filtered_keypoints_pair1_517, filtered_keypoints_pair1_518, R_recoverPose_pair1, t_recoverPose_pair1)
+    points_pair2 = triangulate_points(cam517, cam536, filtered_keypoints_pair2_517, filtered_keypoints_pair2_536, R_recoverPose_pair2, t_recoverPose_pair2)
+    points_pair3 = triangulate_points(cam517, cam520, filtered_keypoints_pair3_517, filtered_keypoints_pair3_520, R_recoverPose_pair3, t_recoverPose_pair3)
 
-    '''Estimate functions''' ######################
-    #R_solvePnP, tvec_solvePnP = estimate_solvePnP(triangulated_points,filtered_keypoints2, cameras)
-    #R_solvePnPRansac, tvec_solvePnPRansac = estimate_solvePnPRansac(triangulated_points, filtered_keypoints2, cameras)
+    # Compute reprojection error
+    reproj_error_pair1 = calculate_reprojection_error(cam518, points_pair1, filtered_keypoints_pair1_518, R_recoverPose_pair1, t_recoverPose_pair1)
+    reproj_error_pair2 = calculate_reprojection_error(cam536, points_pair2, filtered_keypoints_pair2_536, R_recoverPose_pair2, t_recoverPose_pair2)
+    reproj_error_pair3 = calculate_reprojection_error(cam520, points_pair3, filtered_keypoints_pair3_520, R_recoverPose_pair3, t_recoverPose_pair3)
 
-    R_solvePnPRefineLM_pair1_517_518, tvec_refined_pair1_517_518 = estimate_solvePnPRefineLM_pair1_517_518(triangulated_points_pair1_517_518, filtered_keypoints_pair1_518, cameras)
-    R_solvePnPRefineLM_pair2_517_536, tvec_refined_pair2_517_536 = estimate_solvePnPRefineLM_pair2_517_536(triangulated_points_pair2_517_536, filtered_keypoints_pair2_536, cameras)
-    R_solvePnPRefineLM_pair3_517_520, tvec_refined_pair3_517_520 = estimate_solvePnPRefineLM_pair3_517_520(triangulated_points_pair3_517_520, filtered_keypoints_pair3_520, cameras)
-    print('solvePnPRefineLM successful for all cameras!')
+    print(f"Reprojection error for pair 1: {reproj_error_pair1}")
+    print(f"Reprojection error for pair 2: {reproj_error_pair2}")
+    print(f"Reprojection error for pair 3: {reproj_error_pair3}")
 
-    '''Reprojection error''' #######################
-    reprojection_error_solvePnPRefine_pair1_517_518, reprojected_points = calculate_reprojection_error_solvePnPRefine_pair1_517_518(triangulated_points_pair1_517_518, filtered_keypoints_pair1_518, R_solvePnPRefineLM_pair1_517_518, tvec_refined_pair1_517_518, cameras)
-    reprojection_error_solvePnPRefine_pair2_517_536 = calculate_reprojection_error_solvePnPRefine_pair2_517_536(triangulated_points_pair2_517_536, filtered_keypoints_pair2_536, R_solvePnPRefineLM_pair2_517_536, tvec_refined_pair2_517_536, cameras)
-    reprojection_error_solvePnPRefine_pair3_517_520 = calculate_reprojection_error_solvePnPRefine_pair3_517_520(triangulated_points_pair3_517_520, filtered_keypoints_pair3_520, R_solvePnPRefineLM_pair3_517_520, tvec_refined_pair3_517_520, cameras)
+    # Results
+    # Scaling with the real distance between sensors
+    real_distance_cm_pair1 = 592 #206  #594
+    real_distance_cm_pair2 = 762 #764
+    real_distance_cm_pair3 = 481  #479
+
+    # Scale translation for all pairs
+    scale_factor_pair1, scaled_translation_pair1 = scale_translation(t_recoverPose_pair1, real_distance_cm_pair1)
+    scale_factor_pair2, scaled_translation_pair2 = scale_translation(t_recoverPose_pair2, real_distance_cm_pair2)
+    scale_factor_pair3, scaled_translation_pair3 = scale_translation(t_recoverPose_pair3, real_distance_cm_pair3)
+
+    # Decompose rotation matrix
+    rot_decomp_pair1 = decompose_rotation(R_recoverPose_pair1)
+    rot_decomp_pair2 = decompose_rotation(R_recoverPose_pair2)
+    rot_decomp_pair3 = decompose_rotation(R_recoverPose_pair3)
+
+    # Number of keypoints
+    num_keypoints_pair1 = len(filtered_keypoints_pair1_517)
+    num_keypoints_pair2 = len(filtered_keypoints_pair2_517)
+    num_keypoints_pair3 = len(filtered_keypoints_pair3_517)
+
+    # Print results
+    print('Pair 1 - translation from camera 517 to 518 - UBIQISENSE PIPELINE:', "[-483.67437729 -122.77347367  348.15576036] (cm) ")
+    print('Pair 1 - translation from camera 517 to 518 - recoverPose:', scaled_translation_pair1.ravel())
+    print('Pair 1 - rotation from camera 517 to 518 - UBIQISENSE PIPELINE:', "( 47.95943056 -67.13253629 -62.56659299) (deg.) ")
+    print('Pair 1 - rotation from camera 517 to 518 - recoverPose:', rot_decomp_pair1)
+    print('Pair 1 - scale factor:', scale_factor_pair1)
+    print('Number of keypoints:', num_keypoints_pair1, "/ Threshold: ", threshold_pair1, "/ Reprojection error:", reproj_error_pair1)
+    print('')
+
+    print('Pair 2 - translation from camera 517 to 536 - UBIQISENSE PIPELINE:', "[-188.76428849 -211.59882113  731.79469696] (cm) ")
+    print('Pair 2 - translation from camera 517 to 536 - recoverPose:', scaled_translation_pair2.ravel())
+    print('Pair 2 - rotation from camera 517 to 536 - UBIQISENSE PIPELINE:', "( 150.39854946   13.33519403 -177.79742376) (deg.) ")
+    print('Pair 2 - rotation from camera 517 to 536 - recoverPose:', rot_decomp_pair2)
+    print('Pair 2 - scale factor:', scale_factor_pair2)
+    print('Number of keypoints:', num_keypoints_pair2, "/ Threshold: ", threshold_pair2, "/ Reprojection error:", reproj_error_pair2)
+    print('')
+
+    print('Pair 3 - translation from camera 517 to 520 - UBIQISENSE PIPELINE:', "[306.34257461 -94.6791296  380.83349388] (cm) ")
+    print('Pair 3 - translation from camera 517 to 520 - recoverPose:', scaled_translation_pair3.ravel())
+    print('Pair 3 - rotation from camera 517 to 520 - UBIQISENSE PIPELINE:', "( 132.62900666  69.60734076 151.97386786) (deg.) ")
+    print('Pair 3 - rotation from camera 517 to 520 - recoverPose:', rot_decomp_pair3)
+    print('Pair 3 - scale factor:', scale_factor_pair3)
+    print('Number of keypoints:', num_keypoints_pair3, "/ Threshold: ", threshold_pair3, "/ Reprojection error:", reproj_error_pair3)
+    print('')
+
+    print('Approach 1-2, 2-3, 1-3 Triangulation #############################################################################################################')
+
+    images_pair3_518 = sorted(glob(f"{args.image_path_cam2_cam3}/518*.png"))
+    images_pair3_536 = sorted(glob(f"{args.image_path_cam2_cam3}/536*.png"))
+
+    # Extract keypoints
+    keypoints_pair3_518, keypoints_pair3_536, confidences_pair3_518, confidences_pair3_536 = extract_keypoints(images_pair3_518, images_pair3_536, opWrapper)
+
+    # Filter keypoints
+    threshold_approach2 = 0.4
+    filtered_keypoints_pair3_518, filtered_keypoints_pair3_536 = filter_keypoints(keypoints_pair3_518, keypoints_pair3_536, threshold_approach2)
+
+    # Recover pose
+    R_recoverPose_pair3, t_recoverPose_pair3 = estimate_recoverPose(cam518, cam536, filtered_keypoints_pair3_518, filtered_keypoints_pair3_536)
+
+    T32 = np.zeros((4, 4))
+    T32[0:3, 0:3] = R_recoverPose_pair3
+    T32[0:3, 3] = t_recoverPose_pair3.ravel()
+    T32[3, 3] = 1
+    T23 = np.linalg.inv(T32)
+
+    T21 = np.zeros((4, 4))
+    T21[0:3, 0:3] = R_recoverPose_pair1
+    T21[0:3, 3] = t_recoverPose_pair1.ravel()
+    T21[3, 3] = 1
+    print(T21)
+    T12 = np.linalg.inv(T21)
+    #print(T12)
+
+    # T21 = np.zeros((4, 4))
+    # T21[0:3, 0:3] = np.linalg.inv(R_recoverPose_pair1)
+    # T21[0:3, 3] = - np.dot(np.linalg.inv(R_recoverPose_pair1), t_recoverPose_pair1.ravel())
+    # T21[3, 3] = 1
+    # print(T21)
+    # #T12 = np.linalg.inv(T21)
+    # #print(T12)
 
 
-    #print('Reprojection error recoverPose:', reprojection_error_recov)
+    T13 = np.dot(T12,T23)
+    T13 = np.linalg.inv(T13)
+    R_13 = T13[:3, :3]  # Rotation matrix is the top-left 3x3 submatrix
+    t_13 = T13[:3, 3]  # Translation vector is the right-most column
 
-    # reprojection_error_pnp = calculate_reprojection_error_solvePnP(triangulated_points, filtered_keypoints2, R_solvePnP, tvec_solvePnP, cameras)
-    # print('Reprojection error solvepnp:', reprojection_error_pnp)
-    #
-    # reprojection_error_PnPRansac = calculate_reprojection_error_solvePnPRansac(triangulated_points, filtered_keypoints2, R_solvePnPRansac, tvec_solvePnPRansac, cameras)
-    # print('Reprojection error solvepnpRansac:', reprojection_error_PnPRansac)
-    #
-    # reprojection_error_PnPLM = calculate_reprojection_error_solvePnPLM(triangulated_points, filtered_keypoints2, R_solvePnPRefineLM, tvec_refined, cameras)
-    # print('Reprojection error solvepnpLM:', reprojection_error_PnPLM)
+    # Triangulation
+    points_pair3 = triangulate_points(cam518, cam536, filtered_keypoints_pair3_518, filtered_keypoints_pair3_536, R_recoverPose_pair3, t_recoverPose_pair3)
 
+    # Reprojection error
+    reproj_error_pair3 = calculate_reprojection_error(cam536, points_pair3, filtered_keypoints_pair3_536, R_13, t_13)
+
+    # Scaling
+    real_distance_cm_pair3 = 762
+    # real_distance_cm_pair3 = 481 + 592
+    scale_factor_pair3, scaled_translation_pair3 = scale_translation(t_13, real_distance_cm_pair3)
+
+    # Decomp rotation
+    rot_decomp_pair3 = decompose_rotation(R_13)
+
+    num_keypoints_pair3 = len(filtered_keypoints_pair3_518)
+
+
+    # Print results
+    print('Pair 1 - translation from camera 517 to 518 - UBIQISENSE PIPELINE:',
+          "[-483.67437729 -122.77347367  348.15576036] (cm) ")
+    print('Pair 1 - translation from camera 517 to 518 - recoverPose:', scaled_translation_pair1.ravel())
+    print('Pair 1 - rotation from camera 517 to 518 - UBIQISENSE PIPELINE:',
+          "( 47.95943056 -67.13253629 -62.56659299) (deg.) ")
+    print('Pair 1 - rotation from camera 517 to 518 - recoverPose:', rot_decomp_pair1)
+    print('Pair 1 - scale factor:', scale_factor_pair1)
+    print('Number of keypoints:', num_keypoints_pair1, "/ Threshold: ", threshold_pair1, "/ Reprojection error:",
+          reproj_error_pair1)
+    print('')
+
+    print('Pair 2 - translation from camera 517 to 536 - UBIQISENSE PIPELINE:',"[-188.76428849 -211.59882113  731.79469696] (cm) ")
+    print('Pair 2 - translation from camera 536 to 517 - recoverPose:', scaled_translation_pair3.ravel())
+    print('Pair 2 - rotation from camera 517 to 536 - UBIQISENSE PIPELINE:', "( 150.39854946   13.33519403 -177.79742376) (deg.) ")
+    print('Pair 2 - rotation from camera 536 to 517 - recoverPose:', rot_decomp_pair3)
+    print('Pair 2 - scale factor:', scale_factor_pair3)
+    print('Number of keypoints:', num_keypoints_pair3, "/ Threshold: ", threshold_approach2, "/ Reprojection error:", reproj_error_pair3)
+    print('')
+
+    #print('Pair 3 - translation from camera 517 to 520 - UBIQISENSE PIPELINE:', "[306.34257461 -94.6791296  380.83349388] (cm) ")
+    print('Pair 3 - translation from camera 536 to 517 - recoverPose:', scaled_translation_pair2.ravel())
+    #print('Pair 3 - rotation from camera 517 to 520 - UBIQISENSE PIPELINE:',"( 132.62900666  69.60734076 151.97386786) (deg.) ")
+    print('Pair 3 - rotation from camera 517 to 536 - recoverPose:', rot_decomp_pair2)
+    print('Pair 3 - scale factor:', scale_factor_pair3)
+    print('Number of keypoints:', num_keypoints_pair3, "/ Threshold: ", threshold_pair3, "/ Reprojection error:",reproj_error_pair3)
+    print('')
+
+
+
+
+
+    # print("Pair 1 - translation from camera 517 to 518 - UBIQISENSE PIPELINE:",
+    #       "[-483.67437729 -122.77347367  348.15576036] (cm) ")
+    # print("Pair 2 - translation from camera 517 to 536 - UBIQISENSE PIPELINE:",
+    #       "[-188.76428849 -211.59882113  731.79469696] (cm) ")
+    # print("Pair 3 - translation from camera 517 to 520 - UBIQISENSE PIPELINE:",
+    #       "[306.34257461 -94.6791296  380.83349388] (cm) ")
+    # print("Pair 1 - rotation from camera 517 to 518 - UBIQISENSE PIPELINE:", "( 47.95943056 -67.13253629 -62.56659299) (deg.) ")
+    # print("Pair 2 - rotation from camera 517 to 536 - UBIQISENSE PIPELINE:",
+    #       "( 150.39854946   13.33519403 -177.79742376) (deg.) ")
+    # print("Pair 3 - rotation from camera 517 to 520 - UBIQISENSE PIPELINE:",
+    #       "( 132.62900666  69.60734076 151.97386786) (deg.) ")
+
+    print('Approach 1-2, 2-3, 3-4 #############################################################################################################')
+    # Load images
+    images_common_517 = sorted(glob(f"{args.image_path_common}/517*.png"))
+    images_common_518 = sorted(glob(f"{args.image_path_common}/518*.png"))
+    images_common_536 = sorted(glob(f"{args.image_path_common}/536*.png"))
+    images_common_520 = sorted(glob(f"{args.image_path_common}/520*.png"))
+
+    # Extract keypoints for all cameras
+    keypoints_common_517, keypoints_common_518, keypoints_common_536, keypoints_common_520, confidence_common_517, confidence_common_518, confidence_common_536, confidence_common_520 = extract_keypoints_common(images_common_517, images_common_518, images_common_536, images_common_520, opWrapper)
+
+    # Filter keypoints
+    threshold_common = 0.4
+    filtered_common_517, filtered_common_518, filtered_common_536, filtered_common_520 = filter_keypoints_common(keypoints_common_517, keypoints_common_518, keypoints_common_536, keypoints_common_520, threshold_common)
+
+    # Estimate relative pose
+    R_recoverPose_pair1_common, t_recoverPose_pair1_common = estimate_recoverPose(cam517, cam518, filtered_common_517, filtered_common_518)
+
+    R_recoverPose_pair2_common, t_recoverPose_pair2_common = estimate_recoverPose(cam517, cam536, filtered_common_517, filtered_common_536)
+
+    # Triangulate points
+    triangulated_points_pair1_common = triangulate_points(cam517, cam518, filtered_common_517, filtered_common_518, R_recoverPose_pair1_common, t_recoverPose_pair1_common)
+
+    # solvePnp
+    R_solvePnp_pair2_common, t_solvePnp_pair2_common = estimate_solvePnP(triangulated_points_pair1_common, filtered_common_536, cam536)
+    R_solvePnp_pair3_common, t_solvePnp_pair3_common = estimate_solvePnP(triangulated_points_pair1_common, filtered_common_520, cam520)
+    R_solvePnp_pair1_common, t_solvePnp_pair1_common = estimate_solvePnP(triangulated_points_pair1_common, filtered_common_517, cam517)
+
+    # SolvePNP does not give the rot and trans between two cameras but from the object to the camera !!
+    T1_obj = np.zeros((4, 4))
+    T1_obj[0:3, 0:3] = R_solvePnp_pair1_common
+    T1_obj[0:3, 3] = t_solvePnp_pair1_common.ravel()
+    T1_obj[3, 3] = 1
+    T1_obj = np.linalg.inv(T1_obj)
+
+    R_solvePnp_pair1_common = np.linalg.norm(np.dot(R_solvePnp_pair1_common,np.array([20,20,20])))
+    print("lin alg",R_solvePnp_pair1_common)
+    T3_obj = np.zeros((4,4))
+    T3_obj[0:3, 0:3] = R_solvePnp_pair2_common
+    T3_obj[0:3, 3] = t_solvePnp_pair2_common.ravel()
+    T3_obj[3, 3] = 1
+    #T3_obj = np.linalg.pinv(T3_obj)
+
+    T4_obj = np.zeros((4,4))
+    T4_obj[0:3, 0:3] = R_solvePnp_pair3_common
+    T4_obj[0:3, 3] = t_solvePnp_pair3_common.ravel()
+    T4_obj[3, 3] = 1
+    #T4_obj = np.linalg.inv(T4_obj)
+
+    T12 = np.zeros((4,4))
+    T12[0:3, 0:3] = R_recoverPose_pair1_common
+    T12[0:3, 3] = t_recoverPose_pair1_common.ravel()
+    T12[3, 3] = 1
+
+    T13 = np.dot(T3_obj, T1_obj)
+    #T13 = np.linalg.inv(T13)
+    R_13 = T13[:3, :3]  # Rotation matrix is the top-left 3x3 submatrix
+    t_13 = T13[:3, 3]  # Translation vector is the right-most column
+
+    T14 = np.dot(T4_obj,T1_obj)
+    R_14 = T14[:3, :3]  # Rotation matrix is the top-left 3x3 submatrix
+    t_14 = T14[:3, 3]  # Translation vector is the right-most column
+
+    # Calculate Reprojection error with calculate_reprojection_error()
+    reproj_error_pair1_common = calculate_reprojection_error(cam518, triangulated_points_pair1_common, filtered_common_518, R_recoverPose_pair1_common, t_recoverPose_pair1_common)
+
+    reproj_error_pair2_common = calculate_reprojection_error(cam536, triangulated_points_pair1_common, filtered_common_536, R_13, t_13)
+    reproj_error_pair3_common = calculate_reprojection_error(cam520, triangulated_points_pair1_common,filtered_common_520, R_14, t_14)
+
+    # Results
     # Scaling with the real distance between sensors
     real_distance_cm_pair1 = 592
     real_distance_cm_pair2 = 762
     real_distance_cm_pair3 = 481
 
-    estimated_distance_solvePnPRefine_pair1_517_518 = np.linalg.norm(tvec_refined_pair1_517_518)
-    estimated_distance_solvePnPRefine_pair2_517_536 = np.linalg.norm(tvec_refined_pair2_517_536)
-    estimated_distance_solvePnPRefine_pair3_517_520 = np.linalg.norm(tvec_refined_pair3_517_520)
+    # Scale factor
+    scale_factor_pair1_common, scaled_translation_pair1_common = scale_translation(t_recoverPose_pair1_common, real_distance_cm_pair1)
+    scale_factor_pair2_common, scaled_translation_pair2_common = scale_translation(t_13, real_distance_cm_pair2)
+    #scale_factor_pair22_common, scaled_translation_pair22_common = scale_translation(t_recoverPose_pair2_common, real_distance_cm_pair2)
+    scale_factor_pair3_common, scaled_translation_pair3_common = scale_translation(t_14, real_distance_cm_pair3)
 
-    scale_factor_pair1_517_518 = real_distance_cm_pair1 / estimated_distance_solvePnPRefine_pair1_517_518
-    scale_factor_pair2_517_536 = real_distance_cm_pair2 / estimated_distance_solvePnPRefine_pair2_517_536
-    scale_factor_pair3_517_520 = real_distance_cm_pair3 / estimated_distance_solvePnPRefine_pair3_517_520
+    # Decompose rotation matrix
+    rot_decomp_pair1_common = decompose_rotation(R_recoverPose_pair1_common)
+    rot_decomp_pair2_common = decompose_rotation(R_13)
+    #rot_decomp_pair22_common = decompose_rotation(R_recoverPose_pair2_common)
+    rot_decomp_pair3_common = decompose_rotation(R_14)
 
+    # Number of keypoints
+    num_keypoints_pair1 = len(filtered_common_517)
+    num_keypoints_pair2 = len(filtered_common_518)
+    num_keypoints_pair3 = len(filtered_common_536)
 
-
-    T_scaled_cm_pair1_517_518 = scale_factor_pair1_517_518 * tvec_refined_pair1_517_518
-    T_scaled_cm_pair2_517_536 = scale_factor_pair2_517_536 * tvec_refined_pair2_517_536
-    T_scaled_cm_pair3_517_520 = scale_factor_pair3_517_520 * tvec_refined_pair3_517_520
-
-    print('Scale factor pair1: ', scale_factor_pair1_517_518, '/ Scale factor pair2:', scale_factor_pair2_517_536, '/ Scale factor pair3:', scale_factor_pair3_517_520)
-    print("Pair 1 - translation from camera 517 to 518 - UBIQISENSE PIPELINE:", "[-483.67437729 -122.77347367  348.15576036] (cm) ")
-    print("Pair 1 - translation from camera 517 to 518 - solvePnPRefineLM:", T_scaled_cm_pair1_517_518.ravel())
+    # Print results
+    print('Pair 1 - translation from camera 517 to 518 - UBIQISENSE PIPELINE:',
+          "[-483.67437729 -122.77347367  348.15576036] (cm) ")
+    print('Pair 1 - translation from camera 517 to 518 - recoverPose:', scaled_translation_pair1_common.ravel())
+    print('Pair 1 - rotation from camera 517 to 518 - UBIQISENSE PIPELINE:',
+          "( 47.95943056 -67.13253629 -62.56659299) (deg.) ")
+    print('Pair 1 - rotation from camera 517 to 518 - recoverPose:', rot_decomp_pair1_common)
+    print('Pair 1 - scale factor:', scale_factor_pair1_common)
+    print('Number of keypoints:', num_keypoints_pair1, "/ Threshold: ", threshold_common, "/ Reprojection error:",reproj_error_pair1_common)
     print('')
 
-    print("Pair 2 - translation from camera 517 to 536 - UBIQISENSE PIPELINE:", "[-188.76428849 -211.59882113  731.79469696] (cm) ")
-    print("Pair 2 - translation from camera 517 to 536 - solvePnPRefineLM:", T_scaled_cm_pair2_517_536.ravel())
+    print('Pair 2 - translation from camera 517 to 536 - UBIQISENSE PIPELINE:',"[-188.76428849 -211.59882113  731.79469696] (cm) ")
+    print('Pair 2 - translation from camera 517 to 536 - solvePnP:', scaled_translation_pair2_common.ravel())
+    print('Pair 2 - rotation from camera 517 to 536 - UBIQISENSE PIPELINE:',"( 150.39854946   13.33519403 -177.79742376) (deg.) ")
+    print('Pair 2 - rotation from camera 517 to 536 - solvePnP:', rot_decomp_pair2_common)
+    print('Pair 2 - scale factor:', scale_factor_pair2_common)
+    print('Number of keypoints:', num_keypoints_pair2, "/ Threshold: ", threshold_common, "/ Reprojection error:",reproj_error_pair2_common)
     print('')
 
-    print("Pair 3 - translation from camera 517 to 520 - UBIQISENSE PIPELINE:", "[306.34257461 -94.6791296  380.83349388] (cm) ")
-    print("Pair 3 - translation from camera 517 to 520 - solvePnPRefineLM:", T_scaled_cm_pair3_517_520.ravel())
-    print('')
-    # Results
-    rot_decomp_pair1_recoverPose, _, _, _, _, _ = cv2.RQDecomp3x3(R_recoverPose_pair1_517_518)
-    rot_decomp_pair2_recoverPose, _, _, _, _, _ = cv2.RQDecomp3x3(R_recoverPose_pair2_517_536)
-    rot_decomp_pair3_recoverPose, _, _, _, _, _ = cv2.RQDecomp3x3(R_recoverPose_pair3_517_520)
-
-    rot_decomp_pair1_solvePnPRefine, _, _, _, _, _ = cv2.RQDecomp3x3(R_solvePnPRefineLM_pair1_517_518)
-    rot_decomp_pair2_solvePnPRefine, _, _, _, _, _ = cv2.RQDecomp3x3(R_solvePnPRefineLM_pair2_517_536)
-    rot_decomp_pair3_solvePnPRefine, _, _, _, _, _ = cv2.RQDecomp3x3(R_solvePnPRefineLM_pair3_517_520)
-    num_keypoints_pair1 = filtered_keypoints_pair1_517.shape[0]
-    num_keypoints_pair2 = filtered_keypoints_pair2_517.shape[0]
-    num_keypoints_pair3 = filtered_keypoints_pair3_517.shape[0]
-
-    print("Pair 1 - rotation from camera 517 to 518 - UBIQISENSE PIPELINE:", "( 47.95943056 -67.13253629 -62.56659299) (deg.) ")
-    print("Pair 1 - rotation from camera 517 to 518 - recoverPose:", rot_decomp_pair1_recoverPose)
-    print("Pair 1 - rotation from camera 517 to 518 - solvePnPRefineLM:", rot_decomp_pair1_solvePnPRefine)
-    print('Number of keypoints:', num_keypoints_pair1, "/ Threshold: ", threshold_pair1, "/ Reprojection error:", reprojection_error_solvePnPRefine_pair1_517_518 )
+    print('Pair 3 - translation from camera 517 to 520 - UBIQISENSE PIPELINE:',
+          "[306.34257461 -94.6791296  380.83349388] (cm) ")
+    print('Pair 3 - translation from camera 517 to 520 - solvePnP:', scaled_translation_pair3_common.ravel())
+    print('Pair 3 - rotation from camera 517 to 520 - UBIQISENSE PIPELINE:',
+          "( 132.62900666  69.60734076 151.97386786) (deg.) ")
+    print('Pair 3 - rotation from camera 517 to 520 - solvePnP:', rot_decomp_pair3_common)
+    print('Pair 3 - scale factor:', scale_factor_pair3_common)
+    print('Number of keypoints:', num_keypoints_pair3, "/ Threshold: ", threshold_common, "/ Reprojection error:",reproj_error_pair3_common)
     print('')
 
-    print("Pair 2 - rotation from camera 517 to 536 - UBIQISENSE PIPELINE:","( 150.39854946   13.33519403 -177.79742376) (deg.) ")
-    print("Pair 2 - rotation from camera 517 to 536 - recoverPose:", rot_decomp_pair2_recoverPose)
-    print("Pair 2 - rotation from camera 517 to 536 - solvePnPRefineLM:", rot_decomp_pair2_solvePnPRefine)
-    print('Number of keypoints:', num_keypoints_pair2, "/ Threshold: ", threshold_pair2, "/ Reprojection error:", reprojection_error_solvePnPRefine_pair2_517_536)
-    print('')
-
-    print("Pair 3 - rotation from camera 517 to 520 - UBIQISENSE PIPELINE:","( 132.62900666  69.60734076 151.97386786) (deg.) ")
-    print("Pair 3 - rotation from camera 517 to 520 - recoverPose:", rot_decomp_pair3_recoverPose)
-    print("Pair 3 - rotation from camera 517 to 520 - solvePnPRefineLM:", rot_decomp_pair3_solvePnPRefine)
-    print('Number of keypoints:', num_keypoints_pair3, "/ Threshold: ", threshold_pair3, "/ Reprojection error:", reprojection_error_solvePnPRefine_pair3_517_520)
+    overlay_images(sorted(glob(f"{args.image_path_pair1_517_518}/517*.png")),filtered_keypoints_pair1_517)
+    #draw_skeleton(images_common_517, filtered_common_517,  )
 
     #Visualize
     # visualize_3d_points(triangulated_points_pair1_517_518)
@@ -1085,7 +1008,7 @@ if __name__ == '__main__':
     # visualize_3d_points(triangulated_points_pair3_517_520)
 
     #print(reprojected_points) remove a dim!!
-    # visualize_reprojection_error(filtered_keypoints_pair1_518, reprojected_points)
+    #visualize_reprojection_error(filtered_keypoints_pair1_518, reprojected_points)
     #visualize_reprojection_error_heatmap(filtered_keypoints_pair1_518, reprojected_points)
     #visualize_reprojection_error_scatter(filtered_keypoints_pair1_518, reprojected_points)
 

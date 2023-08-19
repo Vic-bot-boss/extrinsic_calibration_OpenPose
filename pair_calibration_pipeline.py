@@ -1210,28 +1210,6 @@ if __name__ == '__main__':
     images_pair2_520_viz = sorted(glob(f"{args.image_path_pair3_517_520}/520_1.png"))[0]
     images_pair3_520_viz = cv2.imread(images_pair2_520_viz)
 
-    # # Camera pair 1
-    # reproj_error_pair1 = pipeline_for_pair(
-    #     args.image_path_pair1_517_518 + "/517*.png",
-    #     args.image_path_pair1_517_518 + "/518*.png",
-    #     cam517, cam518, opWrapper, 0.5, 592
-    # )
-    #
-    # # Camera pair 2
-    # reproj_error_pair2 = pipeline_for_pair(
-    #     args.image_path_pair2_517_536 + "/517*.png",
-    #     args.image_path_pair2_517_536 + "/536*.png",
-    #     cam517, cam536, opWrapper, 0.6, 762
-    # )
-    #
-    # # Camera pair 3
-    # reproj_error_pair3 = pipeline_for_pair(
-    #     args.image_path_pair3_517_520 + "/517*.png",
-    #     args.image_path_pair3_517_520 + "/520*.png",
-    #     cam517, cam520, opWrapper, 0.7, 481
-    # )
-
-
     print('Approach 1-2, 1-3, 1-4 #############################################################################################################')
     # Extract keypoints for the pair 1 using the extract_keypoints() function
     keypoints_pair1_517, keypoints_pair1_518, confidences_pair1_517, confidences_pair1_518 = extract_keypoints(images_pair1_517, images_pair1_518, opWrapper)

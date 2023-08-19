@@ -1088,7 +1088,7 @@ def eulerAnglesToRotationMatrix(theta):
     return R
 
 
-def add_noise_to_rotation(rotation_matrix, sigma=0.5):
+def add_noise_to_rotation(rotation_matrix, sigma=0.05):
     """
     Add noise to a rotation matrix.
 
@@ -1111,7 +1111,7 @@ def add_noise_to_rotation(rotation_matrix, sigma=0.5):
     return perturbed_rotation_matrix
 
 
-def add_noise_to_translation(translation_vector, sigma=0.5):
+def add_noise_to_translation(translation_vector, sigma=0.05):
     """
     Add noise to a translation vector.
 
@@ -1126,7 +1126,7 @@ def add_noise_to_translation(translation_vector, sigma=0.5):
     return noisy_translation
 
 
-def add_noise_to_points(points, sigma=0.5):
+def add_noise_to_points(points, sigma=0.05):
     """
     Add noise to 3D points.
 
@@ -1238,7 +1238,7 @@ if __name__ == '__main__':
 
     # Customizable parameters for bundle adjustment
     num_iterations = 50
-    robust_kernel_threshold = None #np.sqrt(5.991) # 95% confidence interval
+    robust_kernel_threshold = np.sqrt(5.991) # 95% confidence interval
     solver_type = g2o.BlockSolverSE3 #
     linear_solver = g2o.LinearSolverEigenSE3
     # g2o solver types
@@ -1295,9 +1295,6 @@ if __name__ == '__main__':
     # print(len(information_matrix_p3cam1))
     # print(information_matrix_p3cam2)
 
-    # g2o solver types
-    list_g2o_attributes()
-
     # Add noise to the inputs
     noisy_rotations = [add_noise_to_rotation(R) for R in [rotation_vector1, R_recoverPose_pair3]]
     noisy_translations = [add_noise_to_translation(t) for t in [translation_vector1, scaled_translation_pair3]]
@@ -1331,8 +1328,6 @@ if __name__ == '__main__':
     #     solver_type=solver_type,
     #     linear_solver=linear_solver
     # )
-
-    print('Optimized points and cameras:')
     optimized_points = np.array(optimized_points)
 
     # Extracting the optimized rotation matrices and translation vectors for each camera
@@ -1340,6 +1335,7 @@ if __name__ == '__main__':
     cam1_BAtrans, cam2_BAtrans = [camera.translation() for camera in optimized_cameras]
 
     # # Points before / after BA
+    # print('Optimized points and cameras:')
     # print(points_pair3)
     # print(optimized_points)
 
@@ -1417,21 +1413,21 @@ if __name__ == '__main__':
     num_keypoints_pair3 = len(filtered_keypoints_pair3_517)
 
     # Print results
-    print('Pair 1 - translation from camera 517 to 518 - UBIQISENSE PIPELINE:', "[-483.67437729 -122.77347367  348.15576036] (cm) ")
-    print('Pair 1 - translation from camera 517 to 518 - recoverPose:', scaled_translation_pair1.ravel())
-    print('Pair 1 - rotation from camera 517 to 518 - UBIQISENSE PIPELINE:', "( 47.95943056 -67.13253629 -62.56659299) (deg.) ")
-    print('Pair 1 - rotation from camera 517 to 518 - recoverPose:', rot_decomp_pair1)
-    print('Pair 1 - scale factor:', scale_factor_pair1)
-    print('Number of keypoints:', num_keypoints_pair1, "/ Threshold: ", threshold_pair1, "/ Reprojection error:", reproj_error_pair1)
-    print('')
-
-    print('Pair 2 - translation from camera 517 to 536 - UBIQISENSE PIPELINE:', "[-188.76428849 -211.59882113  731.79469696] (cm) ")
-    print('Pair 2 - translation from camera 517 to 536 - recoverPose:', scaled_translation_pair2.ravel())
-    print('Pair 2 - rotation from camera 517 to 536 - UBIQISENSE PIPELINE:', "( 150.39854946   13.33519403 -177.79742376) (deg.) ")
-    print('Pair 2 - rotation from camera 517 to 536 - recoverPose:', rot_decomp_pair2)
-    print('Pair 2 - scale factor:', scale_factor_pair2)
-    print('Number of keypoints:', num_keypoints_pair2, "/ Threshold: ", threshold_pair2, "/ Reprojection error:", reproj_error_pair2)
-    print('')
+    # print('Pair 1 - translation from camera 517 to 518 - UBIQISENSE PIPELINE:', "[-483.67437729 -122.77347367  348.15576036] (cm) ")
+    # print('Pair 1 - translation from camera 517 to 518 - recoverPose:', scaled_translation_pair1.ravel())
+    # print('Pair 1 - rotation from camera 517 to 518 - UBIQISENSE PIPELINE:', "( 47.95943056 -67.13253629 -62.56659299) (deg.) ")
+    # print('Pair 1 - rotation from camera 517 to 518 - recoverPose:', rot_decomp_pair1)
+    # print('Pair 1 - scale factor:', scale_factor_pair1)
+    # print('Number of keypoints:', num_keypoints_pair1, "/ Threshold: ", threshold_pair1, "/ Reprojection error:", reproj_error_pair1)
+    # print('')
+    #
+    # print('Pair 2 - translation from camera 517 to 536 - UBIQISENSE PIPELINE:', "[-188.76428849 -211.59882113  731.79469696] (cm) ")
+    # print('Pair 2 - translation from camera 517 to 536 - recoverPose:', scaled_translation_pair2.ravel())
+    # print('Pair 2 - rotation from camera 517 to 536 - UBIQISENSE PIPELINE:', "( 150.39854946   13.33519403 -177.79742376) (deg.) ")
+    # print('Pair 2 - rotation from camera 517 to 536 - recoverPose:', rot_decomp_pair2)
+    # print('Pair 2 - scale factor:', scale_factor_pair2)
+    # print('Number of keypoints:', num_keypoints_pair2, "/ Threshold: ", threshold_pair2, "/ Reprojection error:", reproj_error_pair2)
+    # print('')
 
     print('Pair 3 - translation from camera 517 to 520 - UBIQISENSE PIPELINE:', "[306.34257461 -94.6791296  380.83349388] (cm) ")
     print('Pair 3 - rotation from camera 517 to 520 - UBIQISENSE PIPELINE:', "( 132.62900666  69.60734076 151.97386786) (deg.) ")
@@ -1442,6 +1438,7 @@ if __name__ == '__main__':
     print('')
 
     # Bundle Adjustment Results
+    print('Bundle Adjustment Results')
     print('Pair 1 - translation from camera 517 to 520 - BA:', BA_scaled_translation_pair1.ravel())
     print('Pair 1 - rotation from camera 517 to 520 - BA:', BA_rot_decomp_pair1)
     #print('Pair 1 - scale factor:', BA_scale_factor_pair1)

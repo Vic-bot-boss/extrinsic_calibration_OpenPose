@@ -726,7 +726,7 @@ def pipeline_for_pair(images_path_1, images_path_2, cam1, cam2, opWrapper, thres
         "num_keypoints": num_keypoints
     }
 
-class BundleAdjustmentinit(g2o.SparseOptimizer):
+class BundleAdjustment_monocular(g2o.SparseOptimizer):
     def __init__(self, solver_type, linear_solver):
         super().__init__()
         solver_block = solver_type(linear_solver())
@@ -734,11 +734,6 @@ class BundleAdjustmentinit(g2o.SparseOptimizer):
         super().set_algorithm(solver)
         self.set_verbose(True)  # Add this line to enable verbosity
         # print(dir(g2o))
-    # def set_convergence_criteria(self, threshold):
-    #     self.solver.set_stop_threshold(threshold)
-
-    # def set_initial_lambda(self, lambda_val):
-    #     self.solver.set_user_lambda_init(lambda_val)
 
     def optimize(self, max_iterations):
         super().initialize_optimization()
@@ -790,8 +785,7 @@ class BundleAdjustmentinit(g2o.SparseOptimizer):
             print(f"Warning: Point with ID {point_id} was not retrieved correctly!")
             return None
 
-
-class BundleAdjustmentinit2(g2o.SparseOptimizer):
+class BundleAdjustment_stereo_1st_try(g2o.SparseOptimizer):
     def __init__(self, solver_type, linear_solver):
         super().__init__()
         solver_block = solver_type(linear_solver())
@@ -799,11 +793,6 @@ class BundleAdjustmentinit2(g2o.SparseOptimizer):
         super().set_algorithm(solver)
         self.set_verbose(True)  # Add this line to enable verbosity
         # print(dir(g2o))
-    # def set_convergence_criteria(self, threshold):
-    #     self.solver.set_stop_threshold(threshold)
-
-    # def set_initial_lambda(self, lambda_val):
-    #     self.solver.set_user_lambda_init(lambda_val)
 
     def optimize(self, max_iterations):
         super().initialize_optimization()
@@ -850,19 +839,11 @@ class BundleAdjustmentinit2(g2o.SparseOptimizer):
             print(f"Warning: Point with ID {point_id} was not retrieved correctly!")
             return None
 
-def list_g2o_attributes():
-    attributes = dir(g2o)
-    for attr in attributes:
-        if "Solver" in attr or "Block" in attr:
-            print(attr)
-
-list_g2o_attributes()
-
 class BundleAdjustment(g2o.SparseOptimizer):
     def __init__(self, solver_type, linear_solver):
         super().__init__()
         solver_block = solver_type(linear_solver())
-        solver = g2o.OptimizationAlgorithmGaussNewton(solver_block)
+        solver = g2o.OptimizationAlgorithmGaussNewton(solver_block) # Levenberg(solver_block) # GaussNewton(solver_block) # Dogleg(solver_block)
 
         # # Set convergence criteria
         # stop_threshold = 1e-6
@@ -954,13 +935,11 @@ def perform_bundle_adjustment_with_class(points, cam_matrices, rotations, transl
     return optimized_points, optimized_poses
 
 
-def perform_bundle_adjustment_with_class_init(points, cam_matrices, rotations, translations, keypoints_list,
+def perform_bundle_adjustment_with_class_monocular(points, cam_matrices, rotations, translations, keypoints_list,
                                                     num_iterations, robust_kernel_threshold, information_matrices_list,
                                                     solver_type, linear_solver):
     # Create an instance of the HyperparamBundleAdjustment class
     ba = BundleAdjustment(solver_type=solver_type, linear_solver=linear_solver)
-    # ba.set_convergence_criteria(1e-6)  # Adjust the value as needed
-    # ba.set_initial_lambda(1e-5)  # Adjust the value as needed
 
     # Add camera poses
     for i, (R, t) in enumerate(zip(rotations, translations)):
@@ -989,7 +968,7 @@ def perform_bundle_adjustment_with_class_init(points, cam_matrices, rotations, t
     final_error = ba.chi2()
     print("Final error after optimization:", final_error)
     return optimized_points, optimized_poses
-def perform_bundle_adjustment_with_class_init2(points, cam_matrices, rotations, translations, keypoints_list,
+def perform_bundle_adjustment_with_class_stereo_1st_try(points, cam_matrices, rotations, translations, keypoints_list,
                                                     num_iterations, robust_kernel_threshold, information_matrices_list,
                                                     solver_type, linear_solver):
     # Create an instance of the BundleAdjustmentStereo class
@@ -1022,6 +1001,12 @@ def perform_bundle_adjustment_with_class_init2(points, cam_matrices, rotations, 
     final_error = ba.chi2()
     print("Final error after optimization:", final_error)
     return optimized_points, optimized_poses
+
+def list_g2o_attributes():
+    attributes = dir(g2o)
+    for attr in attributes:
+        if "Solver" in attr or "Block" in attr:
+            print(attr)
 
 def confidence_to_information(confidence_levels, max_std_dev=1.0, min_std_dev=0.1):
     # Define standard deviations based on confidence levels
@@ -1268,39 +1253,28 @@ if __name__ == '__main__':
     R_recoverPose_pair2, t_recoverPose_pair2 = estimate_recoverPose(cam517, cam536, filtered_keypoints_pair2_517, filtered_keypoints_pair2_536)
     R_recoverPose_pair3, t_recoverPose_pair3 = estimate_recoverPose(cam517, cam520, filtered_keypoints_pair3_517, filtered_keypoints_pair3_520)
 
-    # Triangulate the points
-    # points_pair1 = triangulate_points(cam517, cam518, filtered_keypoints_pair1_517, filtered_keypoints_pair1_518, R_recoverPose_pair1, t_recoverPose_pair1)
-    #points_pair2 = triangulate_points(cam517, cam536, filtered_keypoints_pair2_517, filtered_keypoints_pair2_536, R_recoverPose_pair2, t_recoverPose_pair2)
-    # points_pair3 = triangulate_points(cam517, cam520, filtered_keypoints_pair3_517, filtered_keypoints_pair3_520, R_recoverPose_pair3, t_recoverPose_pair3)
-
-###################################
-    # Put trinagulated points in a single list
-    #all3D_points = np.concatenate([points_pair1, points_pair2, points_pair3])
-
-    # Bundle adjustment
+###################################  Bundle adjustment and hyperparameters
+    # Initialize reference camera
     rotation_vector1 = np.zeros((3, 3))
     translation_vector1 = np.array([0, 0, 0])
 
-
     # Customizable parameters for bundle adjustment
     num_iterations = 50
-    robust_kernel_threshold = None #np.sqrt(5.991)
-    #information_matrix = np.identity(2)
-    solver_type = g2o.BlockSolverSE3
-    linear_solver = g2o.LinearSolverPCGSE2
+    robust_kernel_threshold = None #np.sqrt(5.991) # 95% confidence interval
+    solver_type = g2o.BlockSolverSE3 #
+    linear_solver = g2o.LinearSolverEigenSE3
+    # g2o solver types
+    list_g2o_attributes()
+
     # Scaling with the real distance between sensors
-    real_distance_cm_pair1 = 592  # 206  #594
-    real_distance_cm_pair2 = 762  # 764
-    real_distance_cm_pair3 = 481  # 479 # 206 for synth
+    real_distance_cm_pair1 = 592
+    real_distance_cm_pair2 = 762
+    real_distance_cm_pair3 = 481 # 206 for synth
 
     # Scale translation for all pairs
     scale_factor_pair1, scaled_translation_pair1 = scale_translation(t_recoverPose_pair1, real_distance_cm_pair1)
     scale_factor_pair2, scaled_translation_pair2 = scale_translation(t_recoverPose_pair2, real_distance_cm_pair2)
     scale_factor_pair3, scaled_translation_pair3 = scale_translation(t_recoverPose_pair3, real_distance_cm_pair3)
-
-    #BA_scale_factor_pair1, BA_scaled_translation_pair1 = scale_translation(cam2_BAtrans, real_distance_cm_pair2)
-    # BA_scale_factor_pair2, BA_scaled_translation_pair2 = scale_translation(cam2_BAtrans, real_distance_cm_pair2)
-    # BA_scale_factor_pair3, BA_scaled_translation_pair3 = scale_translation(cam2_BAtrans, real_distance_cm_pair3)
 
     # Triangulate the points
     points_pair1 = triangulate_points(cam517, cam518, filtered_keypoints_pair1_517, filtered_keypoints_pair1_518,
@@ -1310,6 +1284,7 @@ if __name__ == '__main__':
     points_pair3 = triangulate_points(cam517, cam520, filtered_keypoints_pair3_517, filtered_keypoints_pair3_520,
                                       R_recoverPose_pair3, scaled_translation_pair3)
 
+    # Information matrices for each pair of cameras based on confidence levels
     information_matrix_p1cam1 = confidence_to_information(filtconf_keypoints_pair1_517)
     information_matrix_p1cam2 = confidence_to_information(filtconf_keypoints_pair1_518)
 
@@ -1318,20 +1293,7 @@ if __name__ == '__main__':
 
     information_matrix_p3cam1 = confidence_to_information(filtconf_keypoints_pair3_517)
     information_matrix_p3cam2 = confidence_to_information(filtconf_keypoints_pair3_520)
-    # optimized_points, optimized_cameras = perform_bundle_adjustment_with_class(
-    #     points=points_pair2,
-    #     cam_matrices=[cam517_mtx, cam536_mtx],  # Your camera parameters here
-    #     rotations=[rotation_vector1,R_recoverPose_pair2],
-    #     translations=[translation_vector1,scaled_translation_pair2],
-    #     keypoints_list=[filtered_keypoints_pair2_517,filtered_keypoints_pair2_536],
-    #
-    #     num_iterations=num_iterations,
-    #     robust_kernel_threshold=robust_kernel_threshold,
-    #     information_matrices_list=[information_matrix_p2cam1, information_matrix_p2cam2],
-    #     solver_type=solver_type,
-    #     linear_solver=linear_solver
-    # )
-    # print(dir(g2o))
+
     # # Print all bundle adjustment inputs
     # print('Points:')
     # print(points_pair3)
@@ -1355,22 +1317,29 @@ if __name__ == '__main__':
     # print(len(information_matrix_p3cam1))
     # print(information_matrix_p3cam2)
 
+    # g2o solver types
+    list_g2o_attributes()
+
+    # Add noise to the inputs
     noisy_rotations = [add_noise_to_rotation(R) for R in [rotation_vector1, R_recoverPose_pair3]]
     noisy_translations = [add_noise_to_translation(t) for t in [translation_vector1, scaled_translation_pair3]]
     noisy_points = add_noise_to_points(points_pair3)
 
+    # Perform bundle adjustment
     optimized_points, optimized_cameras = perform_bundle_adjustment_with_class(
         points=noisy_points,
         cam_matrices=[cam517_mtx, cam520_mtx],
         rotations=noisy_rotations,
         translations=noisy_translations,
         keypoints_list=[filtered_keypoints_pair3_517, filtered_keypoints_pair3_520],
+
         num_iterations=num_iterations,
         robust_kernel_threshold=robust_kernel_threshold,
         information_matrices_list=[information_matrix_p3cam1, information_matrix_p3cam2],
         solver_type=solver_type,
         linear_solver=linear_solver
     )
+
     # optimized_points, optimized_cameras = perform_bundle_adjustment_with_class(
     #     points=points_pair3,
     #     cam_matrices=[cam517_mtx, cam520_mtx],  # Your camera parameters here
@@ -1385,24 +1354,22 @@ if __name__ == '__main__':
     #     linear_solver=linear_solver
     # )
 
-    # import subprocess
-    # subprocess.run(["run_ba.bat"])
-
     print('Optimized points and cameras:')
-    #print(optimized_points)
     optimized_points = np.array(optimized_points)
 
-    # Extract the optimized camera poses
     # Extracting the optimized rotation matrices and translation vectors for each camera
     cam1_BArot, cam2_BArot = [camera.rotation().matrix() for camera in optimized_cameras]
     cam1_BAtrans, cam2_BAtrans = [camera.translation() for camera in optimized_cameras]
-    print(points_pair3)
-    print(optimized_points)
+
+    # # Points before / after BA
+    # print(points_pair3)
+    # print(optimized_points)
 
     #print(missing_points)
     #points_pair3 = np.delete(points_pair3, missing_points, axis=0)
     #filtered_keypoints_pair3_520 = np.delete(filtered_keypoints_pair3_520, missing_points, axis=0)
 
+    # Visualize the 3D points
     visualize_3d_points(points_pair3)
     visualize_3d_points(optimized_points)
 
@@ -1411,24 +1378,27 @@ if __name__ == '__main__':
     # BA_scale_factor_pair2, BA_scaled_translation_pair2 = scale_translation(cam2_BAtrans, real_distance_cm_pair2)
     # BA_scale_factor_pair3, BA_scaled_translation_pair3 = scale_translation(cam2_BAtrans, real_distance_cm_pair3)
 
-    # Compute reprojection error
+    # Reprojection error before BA
     reproj_error_pair1 = calculate_reprojection_error(cam518, points_pair1, filtered_keypoints_pair1_518, R_recoverPose_pair1, scaled_translation_pair1)
     reproj_error_pair2 = calculate_reprojection_error(cam536, points_pair2, filtered_keypoints_pair2_536, R_recoverPose_pair2, scaled_translation_pair2)
     reproj_error_pair3 = calculate_reprojection_error(cam520, points_pair3, filtered_keypoints_pair3_520, R_recoverPose_pair3, scaled_translation_pair3)
 
+    # Reprojection error after BA
     BA_reproj_error_pair1 = calculate_reprojection_error(cam520, optimized_points, filtered_keypoints_pair3_520, cam2_BArot, BA_scaled_translation_pair1)
     # BA_reproj_error_pair2 = calculate_reprojection_error(cam536, points_cam1_cam3, filtered_keypoints_pair2_536, cam3_BArot, cam3_BAtrans)
     # BA_reproj_error_pair3 = calculate_reprojection_error(cam520, points_cam1_cam4, filtered_keypoints_pair3_520, cam4_BArot, cam4_BAtrans)
 
-
+    # Visualize reprojections
     vis_initial = visualize_reprojections(images_pair3_520_viz,cam520 , R_recoverPose_pair3, scaled_translation_pair3, points_pair3, filtered_keypoints_pair3_520,'visualizations/initial.png')
     vis_optimized = visualize_reprojections(images_pair3_520_viz, cam520, cam2_BArot, BA_scaled_translation_pair1, optimized_points, filtered_keypoints_pair3_520,'visualizations/BA.png')
+
     # Display the images
     cv2.imshow("Initial Projections", vis_initial)
     cv2.imshow("Optimized Projections", vis_optimized)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
+    # Print reprojection errors
     print(f"Reprojection error for pair 1: {reproj_error_pair1}")
     print(f"Reprojection error for pair 2: {reproj_error_pair2}")
     print(f"Reprojection error for pair 3: {reproj_error_pair3}")
@@ -1453,6 +1423,7 @@ if __name__ == '__main__':
     # # BA_scale_factor_pair3, BA_scaled_translation_pair3 = scale_translation(cam2_BAtrans, real_distance_cm_pair3)
 
     #write_to_npz(R_recoverPose_pair2, scaled_translation_pair2, 'visualize_3d/Sensor_Parameters_13_536.npz')
+
     # Decompose rotation matrix
     rot_decomp_pair1 = decompose_rotation(R_recoverPose_pair1)
     rot_decomp_pair2 = decompose_rotation(R_recoverPose_pair2)
@@ -1506,244 +1477,7 @@ if __name__ == '__main__':
     # print('Pair 3 - scale factor:', BA_scale_factor_pair3)
     # print('')
 
-
-
-
-    print('Approach 1-2, 2-3, 1-3 Triangulation #############################################################################################################')
-
-    images_pair3_518 = sorted(glob(f"{args.image_path_cam2_cam3}/518*.png"))
-    images_pair3_536 = sorted(glob(f"{args.image_path_cam2_cam3}/536*.png"))
-
-    # Extract keypoints
-    keypoints_pair3_518, keypoints_pair3_536, confidences_pair3_518, confidences_pair3_536 = extract_keypoints(images_pair3_518, images_pair3_536, opWrapper)
-
-    # Filter keypoints
-    threshold_approach2 = 0.4
-    filtered_keypoints_pair3_518, filtered_keypoints_pair3_536 = filter_keypoints(keypoints_pair3_518, keypoints_pair3_536, threshold_approach2)
-
-    # Recover pose
-    R_recoverPose_pair3, t_recoverPose_pair3 = estimate_recoverPose(cam518, cam536, filtered_keypoints_pair3_518, filtered_keypoints_pair3_536)
-
-    T32 = np.zeros((4, 4))
-    T32[0:3, 0:3] = R_recoverPose_pair3
-    T32[0:3, 3] = t_recoverPose_pair3.ravel()
-    T32[3, 3] = 1
-    T23 = np.linalg.inv(T32)
-
-    T21 = np.zeros((4, 4))
-    T21[0:3, 0:3] = R_recoverPose_pair1
-    T21[0:3, 3] = t_recoverPose_pair1.ravel()
-    T21[3, 3] = 1
-    print(T21)
-    T12 = np.linalg.inv(T21)
-    #print(T12)
-
-    # T21 = np.zeros((4, 4))
-    # T21[0:3, 0:3] = np.linalg.inv(R_recoverPose_pair1)
-    # T21[0:3, 3] = - np.dot(np.linalg.inv(R_recoverPose_pair1), t_recoverPose_pair1.ravel())
-    # T21[3, 3] = 1
-    # print(T21)
-    # #T12 = np.linalg.inv(T21)
-    # #print(T12)
-
-    T13 = np.dot(T12,T23)
-    T13 = np.linalg.inv(T13)
-    R_13 = T13[:3, :3]  # Rotation matrix is the top-left 3x3 submatrix
-    t_13 = T13[:3, 3]  # Translation vector is the right-most column
-
-    # Triangulation
-    points_pair3 = triangulate_points(cam518, cam536, filtered_keypoints_pair3_518, filtered_keypoints_pair3_536, R_recoverPose_pair3, t_recoverPose_pair3)
-
-    # Reprojection error
-    reproj_error_pair3 = calculate_reprojection_error(cam536, points_pair3, filtered_keypoints_pair3_536, R_13, t_13)
-
-
-    # Scaling
-    real_distance_cm_pair3 = 762
-    # real_distance_cm_pair3 = 481 + 592
-    scale_factor_pair3, scaled_translation_pair3 = scale_translation(t_13, real_distance_cm_pair3)
-
-    # Decomp rotation
-    rot_decomp_pair3 = decompose_rotation(R_13)
-
-    num_keypoints_pair3 = len(filtered_keypoints_pair3_518)
-
-
-    # Print results
-    print('Pair 1 - translation from camera 517 to 518 - UBIQISENSE PIPELINE:',
-          "[-483.67437729 -122.77347367  348.15576036] (cm) ")
-    print('Pair 1 - translation from camera 517 to 518 - recoverPose:', scaled_translation_pair1.ravel())
-    print('Pair 1 - rotation from camera 517 to 518 - UBIQISENSE PIPELINE:',
-          "( 47.95943056 -67.13253629 -62.56659299) (deg.) ")
-    print('Pair 1 - rotation from camera 517 to 518 - recoverPose:', rot_decomp_pair1)
-    print('Pair 1 - scale factor:', scale_factor_pair1)
-    print('Number of keypoints:', num_keypoints_pair1, "/ Threshold: ", threshold_pair1, "/ Reprojection error:",
-          reproj_error_pair1)
-    print('')
-
-    print('Pair 2 - translation from camera 517 to 536 - UBIQISENSE PIPELINE:',"[-188.76428849 -211.59882113  731.79469696] (cm) ")
-    print('Pair 2 - translation from camera 536 to 517 - recoverPose:', scaled_translation_pair3.ravel())
-    print('Pair 2 - rotation from camera 517 to 536 - UBIQISENSE PIPELINE:', "( 150.39854946   13.33519403 -177.79742376) (deg.) ")
-    print('Pair 2 - rotation from camera 536 to 517 - recoverPose:', rot_decomp_pair3)
-    print('Pair 2 - scale factor:', scale_factor_pair3)
-    print('Number of keypoints:', num_keypoints_pair3, "/ Threshold: ", threshold_approach2, "/ Reprojection error:", reproj_error_pair3)
-    print('')
-
-    #print('Pair 3 - translation from camera 517 to 520 - UBIQISENSE PIPELINE:', "[306.34257461 -94.6791296  380.83349388] (cm) ")
-    print('Pair 3 - translation from camera 536 to 517 - recoverPose:', scaled_translation_pair2.ravel())
-    #print('Pair 3 - rotation from camera 517 to 520 - UBIQISENSE PIPELINE:',"( 132.62900666  69.60734076 151.97386786) (deg.) ")
-    print('Pair 3 - rotation from camera 517 to 536 - recoverPose:', rot_decomp_pair2)
-    print('Pair 3 - scale factor:', scale_factor_pair3)
-    print('Number of keypoints:', num_keypoints_pair3, "/ Threshold: ", threshold_pair3, "/ Reprojection error:",reproj_error_pair3)
-    print('')
-
-
-
-
-
-    # print("Pair 1 - translation from camera 517 to 518 - UBIQISENSE PIPELINE:",
-    #       "[-483.67437729 -122.77347367  348.15576036] (cm) ")
-    # print("Pair 2 - translation from camera 517 to 536 - UBIQISENSE PIPELINE:",
-    #       "[-188.76428849 -211.59882113  731.79469696] (cm) ")
-    # print("Pair 3 - translation from camera 517 to 520 - UBIQISENSE PIPELINE:",
-    #       "[306.34257461 -94.6791296  380.83349388] (cm) ")
-    # print("Pair 1 - rotation from camera 517 to 518 - UBIQISENSE PIPELINE:", "( 47.95943056 -67.13253629 -62.56659299) (deg.) ")
-    # print("Pair 2 - rotation from camera 517 to 536 - UBIQISENSE PIPELINE:",
-    #       "( 150.39854946   13.33519403 -177.79742376) (deg.) ")
-    # print("Pair 3 - rotation from camera 517 to 520 - UBIQISENSE PIPELINE:",
-    #       "( 132.62900666  69.60734076 151.97386786) (deg.) ")
-
-    print('Approach 1-2, 2-3, 3-4 #############################################################################################################')
-    # Load images
-    images_common_517 = sorted(glob(f"{args.image_path_common}/517*.png"))
-    images_common_518 = sorted(glob(f"{args.image_path_common}/518*.png"))
-    images_common_536 = sorted(glob(f"{args.image_path_common}/536*.png"))
-    images_common_520 = sorted(glob(f"{args.image_path_common}/520*.png"))
-
-    # Extract keypoints for all cameras
-    keypoints_common_517, keypoints_common_518, keypoints_common_536, keypoints_common_520, confidence_common_517, confidence_common_518, confidence_common_536, confidence_common_520 = extract_keypoints_common(images_common_517, images_common_518, images_common_536, images_common_520, opWrapper)
-
-    # Filter keypoints
-    threshold_common = 0.4
-    filtered_common_517, filtered_common_518, filtered_common_536, filtered_common_520 = filter_keypoints_common(keypoints_common_517, keypoints_common_518, keypoints_common_536, keypoints_common_520, threshold_common)
-
-    # Estimate relative pose
-    R_recoverPose_pair1_common, t_recoverPose_pair1_common = estimate_recoverPose(cam517, cam518, filtered_common_517, filtered_common_518)
-
-    R_recoverPose_pair2_common, t_recoverPose_pair2_common = estimate_recoverPose(cam517, cam536, filtered_common_517, filtered_common_536)
-
-    # Triangulate points
-    triangulated_points_pair1_common = triangulate_points(cam517, cam518, filtered_common_517, filtered_common_518, R_recoverPose_pair1_common, t_recoverPose_pair1_common)
-
-    # solvePnp
-    R_solvePnp_pair2_common, t_solvePnp_pair2_common = estimate_solvePnP(triangulated_points_pair1_common, filtered_common_536, cam536)
-    R_solvePnp_pair3_common, t_solvePnp_pair3_common = estimate_solvePnP(triangulated_points_pair1_common, filtered_common_520, cam520)
-    R_solvePnp_pair1_common, t_solvePnp_pair1_common = estimate_solvePnP(triangulated_points_pair1_common, filtered_common_517, cam517)
-
-    # SolvePNP does not give the rot and trans between two cameras but from the object to the camera !!
-    T1_obj = np.zeros((4, 4))
-    T1_obj[0:3, 0:3] = R_solvePnp_pair1_common
-    T1_obj[0:3, 3] = t_solvePnp_pair1_common.ravel()
-    T1_obj[3, 3] = 1
-    T1_obj = np.linalg.inv(T1_obj)
-
-    R_solvePnp_pair1_common = np.linalg.norm(np.dot(R_solvePnp_pair1_common,np.array([20,20,20])))
-    print("lin alg",R_solvePnp_pair1_common)
-    T3_obj = np.zeros((4,4))
-    T3_obj[0:3, 0:3] = R_solvePnp_pair2_common
-    T3_obj[0:3, 3] = t_solvePnp_pair2_common.ravel()
-    T3_obj[3, 3] = 1
-    #T3_obj = np.linalg.pinv(T3_obj)
-
-    T4_obj = np.zeros((4,4))
-    T4_obj[0:3, 0:3] = R_solvePnp_pair3_common
-    T4_obj[0:3, 3] = t_solvePnp_pair3_common.ravel()
-    T4_obj[3, 3] = 1
-    #T4_obj = np.linalg.inv(T4_obj)
-
-    T12 = np.zeros((4,4))
-    T12[0:3, 0:3] = R_recoverPose_pair1_common
-    T12[0:3, 3] = t_recoverPose_pair1_common.ravel()
-    T12[3, 3] = 1
-
-    T13 = np.dot(T3_obj, T1_obj)
-    #T13 = np.linalg.inv(T13)
-    R_13 = T13[:3, :3]  # Rotation matrix is the top-left 3x3 submatrix
-    t_13 = T13[:3, 3]  # Translation vector is the right-most column
-
-    T14 = np.dot(T4_obj,T1_obj)
-    R_14 = T14[:3, :3]  # Rotation matrix is the top-left 3x3 submatrix
-    t_14 = T14[:3, 3]  # Translation vector is the right-most column
-
-    # # Bundle adjustment
-    # optimized_points, optimized_cameras = perform_bundle_adjustment(
-    #     point_cloud=points_pair1,
-    #     camera_matrices=[cam517_mtx, cam518_mtx, cam536_mtx, cam520_mtx],
-    #     rotation_vectors=[rotation_vector1, R_recoverPose_pair1, R_recoverPose_pair2, R_recoverPose_pair3],
-    #     translation_vectors=[translation_vector1, t_recoverPose_pair1, t_recoverPose_pair2, t_recoverPose_pair3],
-    #     keypoints_list=[keypoints_common_517, keypoints_common_518, keypoints_common_536, keypoints_common_520],
-    #     num_iterations=10
-    # )
-
-    # Calculate Reprojection error with calculate_reprojection_error()
-    reproj_error_pair1_common = calculate_reprojection_error(cam518, triangulated_points_pair1_common, filtered_common_518, R_recoverPose_pair1_common, t_recoverPose_pair1_common)
-
-    reproj_error_pair2_common = calculate_reprojection_error(cam536, triangulated_points_pair1_common, filtered_common_536, R_13, t_13)
-    reproj_error_pair3_common = calculate_reprojection_error(cam520, triangulated_points_pair1_common,filtered_common_520, R_14, t_14)
-
-    # Results
-    # Scaling with the real distance between sensors
-    real_distance_cm_pair1 = 592
-    real_distance_cm_pair2 = 762
-    real_distance_cm_pair3 = 481
-
-    # Scale factor
-    scale_factor_pair1_common, scaled_translation_pair1_common = scale_translation(t_recoverPose_pair1_common, real_distance_cm_pair1)
-    scale_factor_pair2_common, scaled_translation_pair2_common = scale_translation(t_13, real_distance_cm_pair2)
-    #scale_factor_pair22_common, scaled_translation_pair22_common = scale_translation(t_recoverPose_pair2_common, real_distance_cm_pair2)
-    scale_factor_pair3_common, scaled_translation_pair3_common = scale_translation(t_14, real_distance_cm_pair3)
-
-    # Decompose rotation matrix
-    rot_decomp_pair1_common = decompose_rotation(R_recoverPose_pair1_common)
-    rot_decomp_pair2_common = decompose_rotation(R_13)
-    #rot_decomp_pair22_common = decompose_rotation(R_recoverPose_pair2_common)
-    rot_decomp_pair3_common = decompose_rotation(R_14)
-
-    # Number of keypoints
-    num_keypoints_pair1 = len(filtered_common_517)
-    num_keypoints_pair2 = len(filtered_common_518)
-    num_keypoints_pair3 = len(filtered_common_536)
-
-    # Print results
-    print('Pair 1 - translation from camera 517 to 518 - UBIQISENSE PIPELINE:',
-          "[-483.67437729 -122.77347367  348.15576036] (cm) ")
-    print('Pair 1 - translation from camera 517 to 518 - recoverPose:', scaled_translation_pair1_common.ravel())
-    print('Pair 1 - rotation from camera 517 to 518 - UBIQISENSE PIPELINE:',
-          "( 47.95943056 -67.13253629 -62.56659299) (deg.) ")
-    print('Pair 1 - rotation from camera 517 to 518 - recoverPose:', rot_decomp_pair1_common)
-    print('Pair 1 - scale factor:', scale_factor_pair1_common)
-    print('Number of keypoints:', num_keypoints_pair1, "/ Threshold: ", threshold_common, "/ Reprojection error:",reproj_error_pair1_common)
-    print('')
-
-    print('Pair 2 - translation from camera 517 to 536 - UBIQISENSE PIPELINE:',"[-188.76428849 -211.59882113  731.79469696] (cm) ")
-    print('Pair 2 - translation from camera 517 to 536 - solvePnP:', scaled_translation_pair2_common.ravel())
-    print('Pair 2 - rotation from camera 517 to 536 - UBIQISENSE PIPELINE:',"( 150.39854946   13.33519403 -177.79742376) (deg.) ")
-    print('Pair 2 - rotation from camera 517 to 536 - solvePnP:', rot_decomp_pair2_common)
-    print('Pair 2 - scale factor:', scale_factor_pair2_common)
-    print('Number of keypoints:', num_keypoints_pair2, "/ Threshold: ", threshold_common, "/ Reprojection error:",reproj_error_pair2_common)
-    print('')
-
-    print('Pair 3 - translation from camera 517 to 520 - UBIQISENSE PIPELINE:',
-          "[306.34257461 -94.6791296  380.83349388] (cm) ")
-    print('Pair 3 - translation from camera 517 to 520 - solvePnP:', scaled_translation_pair3_common.ravel())
-    print('Pair 3 - rotation from camera 517 to 520 - UBIQISENSE PIPELINE:',
-          "( 132.62900666  69.60734076 151.97386786) (deg.) ")
-    print('Pair 3 - rotation from camera 517 to 520 - solvePnP:', rot_decomp_pair3_common)
-    print('Pair 3 - scale factor:', scale_factor_pair3_common)
-    print('Number of keypoints:', num_keypoints_pair3, "/ Threshold: ", threshold_common, "/ Reprojection error:",reproj_error_pair3_common)
-    print('')
-
-    overlay_images(sorted(glob(f"{args.image_path_pair1_517_518}/517*.png")),filtered_keypoints_pair1_517)
+    #overlay_images(sorted(glob(f"{args.image_path_pair1_517_518}/517*.png")),filtered_keypoints_pair1_517)
     #draw_skeleton(images_common_517, filtered_common_517,  )
 
     #Visualize

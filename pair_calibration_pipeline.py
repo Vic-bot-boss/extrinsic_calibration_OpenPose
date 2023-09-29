@@ -102,7 +102,7 @@ def extract_keypoints(images_cam1, images_cam2, opWrapper):
     # Transform the list of keypoints into arrays
     keypoints1 = np.vstack(keypoints_cam1)
     keypoints2 = np.vstack(keypoints_cam2)
-
+    print(keypoints1)
     confidences1 = keypoints1[:, 3].astype(np.float64)
     confidences2 = keypoints2[:, 3].astype(np.float64)
 
@@ -351,9 +351,20 @@ def estimate_recoverPose(cam1, cam2, keypoints1, keypoints2):
     keypoints1 = keypoints1.reshape(-1, 2).astype(np.float64)
     keypoints2 = keypoints2.reshape(-1, 2).astype(np.float64)
 
-    _ ,E , R_recoverPose, t_recoverPose, _= cv2.recoverPose(keypoints1, keypoints2, K1, dist1, K2, dist2)
+    # Find the Essential matrix using RANSAC
+    E, mask = cv2.findEssentialMat(keypoints1, keypoints2, K1, method=cv2.RANSAC)
+
+    # Recover the relative pose using the Essential matrix
+    retval, E, R_recoverPose, t_recoverPose, mask_out = cv2.recoverPose(
+        keypoints1, keypoints2, K1, dist1, K2, dist2, E,
+    method=cv2.RANSAC, #cv2.RANSAC
+    prob=0.999,
+    threshold=3.0,
+    mask=mask)
+
 
     return R_recoverPose, t_recoverPose
+
 def estimate_solvePnP(triangulated_points, filtered_keypoints2, cam2):
     # Using OpenCV's solvePnP function to estimate pose.
 
@@ -374,6 +385,7 @@ def estimate_solvePnP(triangulated_points, filtered_keypoints2, cam2):
 
     # Returning the estimated rotation matrix and translation vector.
     return R_solvePnP, tvec_solvePnP
+
 def estimate_solvePnPRansac(triangulated_points, filtered_keypoints2, cam2):
     # Using OpenCV's solvePnPRansac function to estimate pose.
 
@@ -519,19 +531,40 @@ def calculate_reprojection_error_euclidean(cam2, triangulated_points, filtered_k
     return mean_euclidean_distance
 
 ### Visualization
-def visualize_3d_points(triangulated_points):
-    fig = plt.figure()
+def visualize_3d_points(triangulated_points, title="Triangulated Points"):
+    fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection='3d')
 
     xs = triangulated_points[:, 0]
     ys = triangulated_points[:, 1]
     zs = triangulated_points[:, 2]
 
-    ax.scatter(xs, ys, zs)
+    # Color mapping based on Z value (depth)
+    colors = zs - min(zs)
+    colors = colors / max(colors)
+    colmap = plt.cm.get_cmap('jet')  # 'jet' color map ranges from blue to red
+    colors = colmap(colors)
+
+    # Point size modulation based on depth for a pseudo-depth effect
+    sizes = 50 - (colors[:, -1] * 45)
+
+    scatter = ax.scatter(xs, ys, zs, c=colors, s=sizes, depthshade=True)
 
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
+    ax.set_title(title)
+
+    # Optional: Set consistent axis limits for comparability
+    # ax.set_xlim([-1, 1])
+    # ax.set_ylim([-1, 1])
+    # ax.set_zlim([-1, 1])
+
+    ax.grid(True)
+
+    # Display colorbar to represent depth
+    cbar = fig.colorbar(scatter, ax=ax, pad=0.1, orientation='vertical')
+    cbar.set_label('Depth (Z value)')
 
     plt.show()
 
@@ -584,9 +617,9 @@ def visualize_reprojection_error_heatmap(initial_points, reprojected_points):
     plt.show()
 
 def scale_translation(tvec, real_distance_cm):
-    print(tvec)
+    # print(tvec)
     estimated_distance = np.linalg.norm(tvec)
-    print(estimated_distance)
+    # print(estimated_distance)
     scale_factor = real_distance_cm / estimated_distance
 
     # Scale the translation vector
@@ -658,23 +691,33 @@ def overlay_images(image_paths, keypoints):
     cv2.imshow('Overlay with Skeleton', final_image_with_skeleton)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-def visualize_reprojection_error_scatter(initial_points, reprojected_points):
+
+
+def visualize_reprojection_error_scatter(initial_points, reprojected_points, outliers=None):
+    """
+    Visualizes the reprojection error as a scatter plot.
+
+    Parameters:
+    - initial_points: The original 2D keypoints.
+    - reprojected_points: The reprojected 2D keypoints after triangulation and projection.
+    - outliers: A boolean array indicating which points are outliers.
+    """
+
     # Compute the Euclidean distance between initial points and reprojected points
     errors = np.linalg.norm(initial_points - reprojected_points, axis=1)
 
-    # Duplicate the errors for each point
-    errors = np.repeat(errors, 2)
-
-    # Duplicate the initial points for plotting
-    points = initial_points.reshape(-1, 1)
-    points = np.repeat(points, 2, axis=1)
-    points = points.flatten()
-
-    # Set up the figure and axes
     fig, ax = plt.subplots()
 
-    # Plot the reprojection error as scatter points
-    scatter = ax.scatter(points[::2], points[1::2], c=errors, cmap='cool', alpha=0.7)
+    # Plot the initial points
+    ax.scatter(initial_points[:, 0], initial_points[:, 1], color='blue', label='Original Points')
+
+    # Plot the reprojected points with color indicating error magnitude
+    scatter = ax.scatter(reprojected_points[:, 0], reprojected_points[:, 1], c=errors, cmap='coolwarm', s=50,
+                         label='Reprojected Points')
+
+    # If outlier information is provided, modify the size/shape of outliers
+    if outliers is not None:
+        ax.scatter(initial_points[outliers, 0], initial_points[outliers, 1], color='red', marker='x', label='Outliers')
 
     # Add a colorbar
     cbar = fig.colorbar(scatter)
@@ -684,6 +727,7 @@ def visualize_reprojection_error_scatter(initial_points, reprojected_points):
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_title('Reprojection Error Scatter Plot')
+    ax.legend()
 
     # Show the plot
     plt.show()
@@ -839,11 +883,21 @@ class BundleAdjustment_stereo_1st_try(g2o.SparseOptimizer):
             print(f"Warning: Point with ID {point_id} was not retrieved correctly!")
             return None
 
+# class L2RegularizationEdge(g2o.BaseUnaryEdge):
+#     def __init__(self, lambda_reg):
+#         super().__init__()
+#         self.lambda_reg = lambda_reg
+#
+#     def computeError(self):
+#         # Assuming a 6D pose vertex (x, y, z, roll, pitch, yaw)
+#         self._error[0] = self.lambda_reg * self._vertices[0].estimate().to_vector().norm()
+#
+
 class BundleAdjustment(g2o.SparseOptimizer):
     def __init__(self, solver_type, linear_solver):
         super().__init__()
         solver_block = solver_type(linear_solver())
-        solver = g2o.OptimizationAlgorithmGaussNewton(solver_block) # Levenberg(solver_block) # GaussNewton(solver_block) # Dogleg(solver_block)
+        solver = g2o.OptimizationAlgorithmLevenberg(solver_block) # Levenberg(solver_block) # GaussNewton(solver_block) # Dogleg(solver_block)
 
         # # Set convergence criteria
         # stop_threshold = 1e-6
@@ -868,7 +922,7 @@ class BundleAdjustment(g2o.SparseOptimizer):
         print(f"fy: {cam[1, 1]}")
         print(f"cx: {cam[0, 2]}")
         print(f"cy: {cam[1, 2]}")
-        print(f"baseline: {481}")
+        print(f"baseline: {100}")
         v_se3 = g2o.VertexCam()
         v_se3.set_id(pose_id * 2)
         v_se3.set_estimate(sbacam)
@@ -889,6 +943,11 @@ class BundleAdjustment(g2o.SparseOptimizer):
         edge.set_vertex(1, self.vertex(pose_id * 2))
         edge.set_measurement(np.array(measurement).reshape(2, 1))
         edge.set_information(information)
+
+        # Print out information about the edge
+        print(f"Adding edge between point {point_id} and pose {pose_id}")
+        print(f"Measurement: {measurement}")
+        print(f"Information matrix: {information}")
 
         if robust_kernel_threshold is not None:
             robust_kernel = g2o.RobustKernelHuber(robust_kernel_threshold)
@@ -921,7 +980,8 @@ def perform_bundle_adjustment_with_class(points, cam_matrices, rotations, transl
         ba.add_point(point_id=point_id, point=point)
         for cam_id in [0, 1]:
             measurement = keypoints_list[cam_id][point_id]
-            information = information_matrices_list[cam_id][point_id]
+            #information = information_matrices_list[cam_id][point_id]
+            information = np.identity(2)
             ba.add_edge(point_id=point_id, pose_id=cam_id, measurement=measurement,
                         information=information, robust_kernel_threshold=robust_kernel_threshold)
 
@@ -1005,7 +1065,7 @@ def perform_bundle_adjustment_with_class_stereo_1st_try(points, cam_matrices, ro
 def list_g2o_attributes():
     attributes = dir(g2o)
     for attr in attributes:
-        if "Solver" in attr or "Block" in attr:
+        if "Solver" in attr or "Block" in attr or 'OptimizationAlgorithm' in attr or 'RobustKernel' in attr:
             print(attr)
 
 def confidence_to_information(confidence_levels, max_std_dev=1.0, min_std_dev=0.1):
@@ -1088,7 +1148,7 @@ def eulerAnglesToRotationMatrix(theta):
     return R
 
 
-def add_noise_to_rotation(rotation_matrix, sigma=0.05):
+def add_noise_to_rotation(rotation_matrix, sigma=0.5):
     """
     Add noise to a rotation matrix.
 
@@ -1111,7 +1171,7 @@ def add_noise_to_rotation(rotation_matrix, sigma=0.05):
     return perturbed_rotation_matrix
 
 
-def add_noise_to_translation(translation_vector, sigma=0.05):
+def add_noise_to_translation(translation_vector, sigma=5):
     """
     Add noise to a translation vector.
 
@@ -1126,7 +1186,7 @@ def add_noise_to_translation(translation_vector, sigma=0.05):
     return noisy_translation
 
 
-def add_noise_to_points(points, sigma=0.05):
+def add_noise_to_points(points, sigma=5):
     """
     Add noise to 3D points.
 
@@ -1140,7 +1200,33 @@ def add_noise_to_points(points, sigma=0.05):
     perturbed_points = [point + np.random.normal(0, sigma, 1) for point in points]
     return perturbed_points
 
+def apply_transformation_to_room_reference(rotation_matrices, translation_vectors):
+    # Define the translation (200 cm along the positive Z-axis for Cam1)
+    translation_vector1 = np.array([0, 0, 200]).reshape(3, 1)
 
+    # Define the rotation (8 degrees around X-axis for Cam1)
+    angle_deg = 8
+    angle_rad = np.deg2rad(angle_deg)
+    rotation_matrix1 = np.array([
+        [1, 0, 0],
+        [0, np.cos(angle_rad), -np.sin(angle_rad)],
+        [0, np.sin(angle_rad), np.cos(angle_rad)]
+    ])
+
+    # Apply the transformation to all cameras (assuming rotation_matrices and translation_vectors are lists of extrinsic parameters)
+    new_rotation_matrices = []
+    new_translation_vectors = []
+    for i, (R, t) in enumerate(zip(rotation_matrices, translation_vectors)):
+        # For Cam1, set the specific rotation and translation
+        if i == 0:
+            new_rotation_matrices.append(rotation_matrix1)
+            new_translation_vectors.append(translation_vector1)
+        else:
+            # Apply inverse transformation to the other cameras to align with the new reference frame
+            new_rotation_matrices.append(rotation_matrix1.T @ R)
+            new_translation_vectors.append(rotation_matrix1.T @ (t - translation_vector1))
+
+    return new_rotation_matrices, new_translation_vectors
 
 def getHomography(
         points1,
@@ -1231,15 +1317,169 @@ if __name__ == '__main__':
     R_recoverPose_pair2, t_recoverPose_pair2 = estimate_recoverPose(cam517, cam536, filtered_keypoints_pair2_517, filtered_keypoints_pair2_536)
     R_recoverPose_pair3, t_recoverPose_pair3 = estimate_recoverPose(cam517, cam520, filtered_keypoints_pair3_517, filtered_keypoints_pair3_520)
 
+
+    # Hardcoded keypoints
+    #filtered_keypoints1_charuco = np.array([[289, 392], [250, 380], [233, 406], [193, 392], [214,434], [378, 392], [321,379], [309,404]])
+    #print(filtered_keypoints1_charuco)
+    #filtered_keypoints2_charuco = np.array([[1036.6193, 478.9927], [1075.4508, 467.73816], [982.38214, 459.42395], [1023.3541, 451.7], [892,449], [1051,510],[1092,493],[991,482]])
+
+    # CUBE #############################################################################################################
+    import seaborn as sns
+
+    filtered_keypoints1_charuco = np.array([[793,104], [793,508], [521,139], [521,473], [992,140], [992,472]])
+    print(filtered_keypoints1_charuco)
+    filtered_keypoints2_charuco = np.array([[398,175], [398,578], [199,211], [199,542], [667,211], [667,541]])
+
+
+    # Extend the add_controlled_noise function to support Gaussian noise
+    def add_controlled_noise(points, noise_increment, iteration, noise_type='linear'):
+        if noise_type == 'linear':
+            noise = np.linspace(0, noise_increment, len(points)) * iteration
+            noise = noise.reshape(-1, 1)
+            noisy_points = points + noise
+        elif noise_type == 'gaussian':
+            # Gaussian noise with mean 0 and std deviation as noise_increment * iteration
+            noise = np.random.normal(0, noise_increment * iteration, points.shape)
+            noisy_points = points + noise
+        return noisy_points
+
+    def modify_intrinsics(K, error_factor):
+        K_modified = K.copy()  # Create a copy of K to avoid modifying the original
+        K_modified *= np.array([[error_factor, 1, error_factor],
+                                [1, error_factor, error_factor],
+                                [1, 1, 1]])
+        return K_modified
+
+
+    # Placeholder arrays to store metrics and additional data
+    noise_levels = []
+    rmse_rotations = []
+    rmse_translations = []
+    reproj_errors = []
+    noisy_kps1 = []  # List to store noisy keypoints1
+    noisy_kps2 = []  # List to store noisy keypoints2
+    condition_numbers = []  # List to store condition numbers of Essential matrix E
+
+    # Ground truth for comparison
+    R_charuco, t_charuco = estimate_recoverPose(cam517, cam520, filtered_keypoints1_charuco,
+                                                filtered_keypoints2_charuco)
+    points_pair4 = triangulate_points(cam517, cam520, filtered_keypoints1_charuco, filtered_keypoints2_charuco,
+                                      R_charuco, t_charuco)
+
+    # Loop through different levels of noise
+    num_iterations = 100
+    noise_increment = 0.5  # Adjust this value based on how much noise you want to add at each step
+
+    for i in range(0, num_iterations + 1):
+        noise_level = noise_increment * i
+
+        noisy_keypoints1 = add_controlled_noise(filtered_keypoints1_charuco, noise_increment, i)
+        noisy_keypoints2 = add_controlled_noise(filtered_keypoints2_charuco, noise_increment, i)
+
+        noisy_kps1.append(noisy_keypoints1)
+        noisy_kps2.append(noisy_keypoints2)
+
+        R_noisy, t_noisy = estimate_recoverPose(cam517, cam520, noisy_keypoints1, noisy_keypoints2)
+
+        E, mask = cv2.findEssentialMat(noisy_keypoints1, noisy_keypoints2, cam517['matrix'], method=cv2.RANSAC)
+        U, s, V = np.linalg.svd(E)
+        cond_number = s[0] / s[-1]
+        condition_numbers.append(cond_number)
+
+        rmse_rotation = np.sqrt(np.mean((R_noisy - R_charuco) ** 2))
+        rmse_translation = np.sqrt(np.mean((t_noisy - t_charuco) ** 2))
+        reproj_error_noisy = calculate_reprojection_error(cam520, points_pair4, noisy_keypoints2, R_noisy, t_noisy)
+
+        noise_levels.append(noise_level)
+        rmse_rotations.append(rmse_rotation)
+        rmse_translations.append(rmse_translation)
+        reproj_errors.append(reproj_error_noisy)
+
+        print(
+            f"Iteration: {i}, Noise Level: {noise_level}, RMSE Rotation: {rmse_rotation}, RMSE Translation: {rmse_translation}, Reprojection Error: {reproj_error_noisy}")
+
+    # Analyze spikes
+    spike_indices = [i for i, reproj_error in enumerate(reproj_errors) if
+                     reproj_error > 10]  # Change threshold as needed
+
+    for spike_index in spike_indices:
+        print(f"Spike observed at iteration: {spike_index}, Noise Level: {noise_levels[spike_index]}")
+        print(f"Noisy Keypoints from Image 1: \n{noisy_kps1[spike_index]}")
+        print(f"Noisy Keypoints from Image 2: \n{noisy_kps2[spike_index]}")
+        print(f"Condition number of Essential matrix E: {condition_numbers[spike_index]}")
+        print("-----")
+
+    # Plotting the metrics
+    plt.figure(figsize=(12, 8))
+
+    plt.subplot(3, 1, 1)
+    plt.plot(noise_levels, rmse_rotations, label='RMSE Rotation', color='r')
+    plt.xlabel('Noise Level')
+    plt.ylabel('RMSE Rotation')
+    plt.title('Impact of Noise on RMSE Rotation')
+    plt.grid(True)
+
+    plt.subplot(3, 1, 2)
+    plt.plot(noise_levels, rmse_translations, label='RMSE Translation', color='g')
+    plt.xlabel('Noise Level')
+    plt.ylabel('RMSE Translation')
+    plt.title('Impact of Noise on RMSE Translation')
+    plt.grid(True)
+
+    plt.subplot(3, 1, 3)
+    plt.plot(noise_levels, reproj_errors, label='Reprojection Error', color='b')
+    plt.xlabel('Noise Level')
+    plt.ylabel('Reprojection Error')
+    plt.title('Impact of Noise on Reprojection Error')
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+
+    # # Loop through different calibration error levels
+    # error_factors = [1, 1.01, 1.05, 1.1, 1.2, 2]
+    #
+    # for error_factor in error_factors:
+    #     cam517['matrix'] = modify_intrinsics(cam517['matrix'], error_factor)
+    #     cam520['matrix'] = modify_intrinsics(cam520['matrix'], error_factor)
+    #
+    #
+    #     R_calib_error, t_calib_error = estimate_recoverPose(cam517, cam520,
+    #                                                         filtered_keypoints1_charuco, filtered_keypoints2_charuco)
+    #
+    #     # Calculate RMSE for rotation and translation
+    #     rmse_rotation = np.sqrt(np.mean((R_calib_error - R_charuco) ** 2))
+    #     rmse_translation = np.sqrt(np.mean((t_calib_error - t_charuco) ** 2))
+    #
+    #     print(
+    #         f"Calibration Error Factor: {error_factor}, RMSE Rotation: {rmse_rotation}, RMSE Translation: {rmse_translation}")
+
+
+#######################################
+    R_charuco, t_charuco = estimate_recoverPose(cam517, cam520, filtered_keypoints1_charuco, filtered_keypoints2_charuco)
+    R_charuco_decomp = decompose_rotation(R_charuco)
+    print('R_charuco:')
+    print(R_charuco_decomp)
+    real_distance_cm_pair3 = 100
+    scale_factor3, t_charuco = scale_translation(t_charuco, real_distance_cm_pair3)
+    print('t_charuco:')
+    print(t_charuco)
+    points_pair4 = triangulate_points(cam517, cam520, filtered_keypoints1_charuco, filtered_keypoints2_charuco,
+                                      R_charuco, t_charuco)
+    reproj_error_pair1 = calculate_reprojection_error(cam520, points_pair4, filtered_keypoints2_charuco,
+                                                      R_charuco, t_charuco)
+    print('Reprojection error CUBE:')
+    print(reproj_error_pair1)
 ###################################  Bundle adjustment and hyperparameters
     # Initialize reference camera
     rotation_vector1 = np.zeros((3, 3))
     translation_vector1 = np.array([0, 0, 0])
 
     # Customizable parameters for bundle adjustment
-    num_iterations = 50
+    num_iterations = 1000
     robust_kernel_threshold = np.sqrt(5.991) # 95% confidence interval
-    solver_type = g2o.BlockSolverSE3 #
+    solver_type = g2o.BlockSolverSE3
     linear_solver = g2o.LinearSolverEigenSE3
     # g2o solver types
     list_g2o_attributes()
@@ -1253,6 +1493,94 @@ if __name__ == '__main__':
     scale_factor_pair1, scaled_translation_pair1 = scale_translation(t_recoverPose_pair1, real_distance_cm_pair1)
     scale_factor_pair2, scaled_translation_pair2 = scale_translation(t_recoverPose_pair2, real_distance_cm_pair2)
     scale_factor_pair3, scaled_translation_pair3 = scale_translation(t_recoverPose_pair3, real_distance_cm_pair3)
+
+    print('Scaled translation for pair 1:')
+    print(scaled_translation_pair1)
+    print('Scaled translation for pair 2:')
+    print(scaled_translation_pair2)
+    print('Scaled translation for pair 3:')
+    print(scaled_translation_pair3)
+
+#######################################
+    from math import radians, cos, sin
+
+
+    def cam1_to_room_transformation():
+        # 8-degree forward tilt around the X-axis
+        theta_x = np.radians(98)
+        Rx = np.array([
+            [1, 0, 0],
+            [0, np.cos(theta_x), -np.sin(theta_x)],
+            [0, np.sin(theta_x), np.cos(theta_x)]
+        ])
+
+        # 45-degree rotation around the Y-axis
+        theta_y = np.radians(45)
+        Ry = np.array([
+            [np.cos(theta_y), 0, np.sin(theta_y)],
+            [0, 1, 0],
+            [-np.sin(theta_y), 0, np.cos(theta_y)]
+        ])
+
+        # Combine rotations
+        R_cam1_room = Ry @ Rx
+
+        # Translation along Z-axis (200 cm high)
+        t_cam1_room = np.array([0, 0, 200])
+
+        return R_cam1_room, t_cam1_room
+
+    def inverse_transformation(R, t):
+        R_inv = R.T
+        t_inv = t.reshape(-1)
+        return R_inv, t_inv
+
+    R_cam1_room, t_cam1_room = cam1_to_room_transformation()
+    print('R_cam1_room:')
+    print(R_cam1_room)
+    print('t_cam1_room:')
+    print(t_cam1_room)
+
+    R_cam1_cam2, t_cam1_cam2 = inverse_transformation(R_recoverPose_pair1, scaled_translation_pair1)
+    R_cam1_cam3, t_cam1_cam3 = inverse_transformation(R_recoverPose_pair2, scaled_translation_pair2)
+    R_cam1_cam4, t_cam1_cam4 = inverse_transformation(R_recoverPose_pair3, scaled_translation_pair3)
+
+    #t_cam1_cam4[0] = -t_cam1_cam4[0]
+    print(t_cam1_cam4)
+
+    tranz = t_cam1_cam4 + t_cam1_room
+    p2 =R_recoverPose_pair3 @ tranz
+    print('p2:')
+    print(p2)
+    def transform_to_room(R_cam1_camX, t_cam1_camX, R_cam1_room, t_cam1_room):
+        R_room_camX = R_cam1_room @ R_cam1_camX
+        t_room_camX = R_cam1_room @ (t_cam1_camX + t_cam1_room)
+        return R_room_camX, t_room_camX
+
+
+    # Transformations from room to cam2, cam3, cam4
+    R_room_cam2, t_room_cam2 = transform_to_room(R_cam1_cam2, t_cam1_cam2, R_cam1_room, t_cam1_room)
+    R_room_cam3, t_room_cam3 = transform_to_room(R_cam1_cam3, t_cam1_cam3, R_cam1_room, t_cam1_room)
+    R_room_cam4, t_room_cam4 = transform_to_room(R_cam1_cam4, t_cam1_cam4, R_cam1_room, t_cam1_room)
+
+    print('ROOM TO CAM')
+    print('R_room_cam2:')
+    print(R_room_cam2)
+    print('t_room_cam2:')
+    print(t_room_cam2)
+    print('R_room_cam3:')
+    print(R_room_cam3)
+    print('t_room_cam3:')
+    print(t_room_cam3)
+    print('R_room_cam4:')
+    print(R_room_cam4)
+    print('t_room_cam4:')
+    print(t_room_cam4)
+
+
+
+
+
 
     # Triangulate the points
     points_pair1 = triangulate_points(cam517, cam518, filtered_keypoints_pair1_517, filtered_keypoints_pair1_518,
@@ -1272,49 +1600,137 @@ if __name__ == '__main__':
     information_matrix_p3cam1 = confidence_to_information(filtconf_keypoints_pair3_517)
     information_matrix_p3cam2 = confidence_to_information(filtconf_keypoints_pair3_520)
 
-    # # Print all bundle adjustment inputs
-    # print('Points:')
-    # print(points_pair3)
-    # print(len(points_pair3))
-    #
-    # print('Cameras:')
-    # print(cam517_mtx)
-    # print(cam520_mtx)
-    # print('Rotations:')
-    # print(rotation_vector1)
-    # print(R_recoverPose_pair3)
-    # print('Translations:')
-    # print(translation_vector1)
-    # print(scaled_translation_pair3)
-    # print('Keypoints:')
-    # print(filtered_keypoints_pair3_517)
-    # print(filtered_keypoints_pair3_520)
-    # print(len(filtered_keypoints_pair3_517))
-    # print('Information matrices:')
-    # print(information_matrix_p3cam1)
-    # print(len(information_matrix_p3cam1))
-    # print(information_matrix_p3cam2)
+    translation_vector1 = translation_vector1.reshape(3, 1)
+    # Print all bundle adjustment inputs
+    print('Points:')
+    print(points_pair3[:5])
+    print(len(points_pair3))
 
-    # Add noise to the inputs
-    noisy_rotations = [add_noise_to_rotation(R) for R in [rotation_vector1, R_recoverPose_pair3]]
-    noisy_translations = [add_noise_to_translation(t) for t in [translation_vector1, scaled_translation_pair3]]
+    print('Cameras:')
+    print(cam517_mtx)
+    print(cam520_mtx)
+    print('Rotations:')
+    print(rotation_vector1)
+    print(R_recoverPose_pair3)
+    print('Translations:')
+    print(translation_vector1)
+    print(scaled_translation_pair3)
+    print('Keypoints:')
+    print(filtered_keypoints_pair3_517[:5])
+    print(filtered_keypoints_pair3_520[:5])
+    print(len(filtered_keypoints_pair3_517))
+    print('Information matrices:')
+    print(information_matrix_p3cam1[:5])
+    print(len(information_matrix_p3cam1))
+    print(information_matrix_p3cam2[:5])
+
+    #Add noise to the inputs
+    # noisy_rotations = [add_noise_to_rotation(R) for R in [rotation_vector1, R_recoverPose_pair3]]
+    # noisy_translations = [add_noise_to_translation(t) for t in [translation_vector1, scaled_translation_pair3]]
     noisy_points = add_noise_to_points(points_pair3)
+    noisy_rotation_cam2 = add_noise_to_rotation(R_recoverPose_pair3)
+    noisy_translation_cam2 = add_noise_to_translation(scaled_translation_pair3)
 
-    # Perform bundle adjustment
-    optimized_points, optimized_cameras = perform_bundle_adjustment_with_class(
-        points=noisy_points,
-        cam_matrices=[cam517_mtx, cam520_mtx],
-        rotations=noisy_rotations,
-        translations=noisy_translations,
-        keypoints_list=[filtered_keypoints_pair3_517, filtered_keypoints_pair3_520],
 
-        num_iterations=num_iterations,
-        robust_kernel_threshold=robust_kernel_threshold,
-        information_matrices_list=[information_matrix_p3cam1, information_matrix_p3cam2],
-        solver_type=solver_type,
-        linear_solver=linear_solver
-    )
+    #print(translation_vector1)
+    noisy_points = np.array(noisy_points)
 
+    print ('Noisy points:')
+    print(noisy_points[:5])
+    print('Noisy cameras:')
+    print(noisy_rotation_cam2)
+    print(noisy_translation_cam2)
+    # Print initial inputs
+    print('Initial points and cameras:')
+    print(points_pair3)
+    print(R_recoverPose_pair3)
+    print(scaled_translation_pair3)
+
+
+    # print(translation_vector1)
+    # def simulate_camera_setup(num_points=10, baseline=481, fx=1120, fy=1120, cx=600, cy=400,
+    #                           point_distance=1000, point_variance=200, noise_level=5.0):
+    #     """
+    #     Simulate a camera setup.
+    #
+    #     Args:
+    #     - num_points: number of 3D points to simulate.
+    #     - baseline: distance between the two cameras.
+    #     - fx, fy, cx, cy: intrinsic parameters of the cameras.
+    #     - point_distance: average distance of 3D points from the cameras.
+    #     - point_variance: variance in the distribution of 3D points around the average distance.
+    #     - noise_level: noise to add in the 2D projections to simulate real-world observations.
+    #
+    #     Returns:
+    #     - keypoints1, keypoints2: noisy 2D projections in the two cameras.
+    #     - points_3d: true 3D points.
+    #     - rotations: rotations of the two cameras.
+    #     - translations: translations of the two cameras.
+    #     """
+    #
+    #     # Camera matrices (same for both cameras in this simulation)
+    #     K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
+    #
+    #     # Simulate 3D points in front of the camera
+    #     points_3d = np.hstack((np.random.randn(num_points, 2) * point_variance,
+    #                            point_distance + np.random.randn(num_points, 1) * point_variance))
+    #
+    #     # Camera poses
+    #     # First camera at origin and second camera translated by baseline along x-axis
+    #     rotations = [np.eye(3), np.eye(3)]
+    #     translations = [np.array([[0], [0], [0]]), np.array([[baseline], [0], [0]])]
+    #
+    #     # Project 3D points to 2D image planes of the cameras
+    #     P1 = K @ np.hstack([rotations[0], translations[0]])
+    #     P2 = K @ np.hstack([rotations[1], translations[1]])
+    #
+    #     # Convert 3D points to homogeneous coordinates for projection
+    #     points_3d_homogeneous = np.hstack([points_3d, np.ones((num_points, 1))])
+    #
+    #     keypoints1 = (P1 @ points_3d_homogeneous.T).T
+    #     keypoints1 /= keypoints1[:, 2:3]
+    #
+    #     keypoints2 = (P2 @ points_3d_homogeneous.T).T
+    #     keypoints2 /= keypoints2[:, 2:3]
+    #
+    #     # Add noise to the 2D keypoints
+    #     keypoints1[:, :2] += np.random.randn(num_points, 2) * noise_level
+    #     keypoints2[:, :2] += np.random.randn(num_points, 2) * noise_level
+    #
+    #     return keypoints1[:, :2], keypoints2[:, :2], points_3d, rotations, translations
+    #
+    #
+    # keypoints1, keypoints2, points_3d, rotations, translations = simulate_camera_setup()
+    #
+    # optimized_points, optimized_cameras = perform_bundle_adjustment_with_class(
+    #     points=points_3d,
+    #     cam_matrices=[cam517_mtx, cam520_mtx],
+    #     rotations=rotations,
+    #     translations=translations,
+    #     keypoints_list=[keypoints1, keypoints2],
+    #
+    #     num_iterations=num_iterations,
+    #     robust_kernel_threshold=robust_kernel_threshold,
+    #     information_matrices_list=[information_matrix_p3cam1, information_matrix_p3cam2],
+    #     solver_type=solver_type,
+    #     linear_solver=linear_solver
+    # )
+
+    # # Perform bundle adjustment
+    # optimized_points, optimized_cameras = perform_bundle_adjustment_with_class(
+    #     points=noisy_points,
+    #     cam_matrices=[cam517_mtx, cam520_mtx],
+    #     rotations=[rotation_vector1, noisy_rotation_cam2],
+    #     translations=[translation_vector1, noisy_translation_cam2],
+    #     keypoints_list=[filtered_keypoints_pair3_517, filtered_keypoints_pair3_520],
+    #
+    #     num_iterations=num_iterations,
+    #     robust_kernel_threshold=robust_kernel_threshold,
+    #     information_matrices_list=[information_matrix_p3cam1, information_matrix_p3cam2],
+    #     solver_type=solver_type,
+    #     linear_solver=linear_solver
+    # )
+    #scaled_translation_pair3[0] = -scaled_translation_pair3[0]
     # optimized_points, optimized_cameras = perform_bundle_adjustment_with_class(
     #     points=points_pair3,
     #     cam_matrices=[cam517_mtx, cam520_mtx],  # Your camera parameters here
@@ -1328,16 +1744,40 @@ if __name__ == '__main__':
     #     solver_type=solver_type,
     #     linear_solver=linear_solver
     # )
+    optimized_points, optimized_cameras = perform_bundle_adjustment_with_class(
+        points=points_pair4,
+        cam_matrices=[cam517_mtx,cam520_mtx],  # Your camera parameters here
+        rotations=[rotation_vector1, R_charuco],
+        translations=[translation_vector1, t_charuco],
+        keypoints_list=[filtered_keypoints1_charuco,filtered_keypoints2_charuco],
+
+        num_iterations=num_iterations,
+        robust_kernel_threshold=robust_kernel_threshold,
+        information_matrices_list=[information_matrix_p3cam1, information_matrix_p3cam2],
+        solver_type=solver_type,
+        linear_solver=linear_solver
+    )
+
     optimized_points = np.array(optimized_points)
 
     # Extracting the optimized rotation matrices and translation vectors for each camera
     cam1_BArot, cam2_BArot = [camera.rotation().matrix() for camera in optimized_cameras]
     cam1_BAtrans, cam2_BAtrans = [camera.translation() for camera in optimized_cameras]
 
-    # # Points before / after BA
-    # print('Optimized points and cameras:')
-    # print(points_pair3)
-    # print(optimized_points)
+    print('cam1_BArot:')
+    print(cam1_BArot)
+    print('cam2_BArot:')
+    print(cam2_BArot)
+    print('cam1_BAtrans:')
+    print(cam1_BAtrans)
+    print('cam2_BAtrans:')
+    print(cam2_BAtrans)
+
+    # Points before / after BA
+    print('Optimized points and cameras:')
+    print(points_pair4[:10])
+    print(len(optimized_points))
+    print(optimized_points[:10])
 
     #print(missing_points)
     #points_pair3 = np.delete(points_pair3, missing_points, axis=0)
@@ -1348,7 +1788,7 @@ if __name__ == '__main__':
     visualize_3d_points(optimized_points)
 
 
-    BA_scale_factor_pair1, BA_scaled_translation_pair1 = scale_translation(cam2_BAtrans, real_distance_cm_pair3)
+    #BA_scale_factor_pair1, BA_scaled_translation_pair1 = scale_translation(cam2_BAtrans, 100)
     # BA_scale_factor_pair2, BA_scaled_translation_pair2 = scale_translation(cam2_BAtrans, real_distance_cm_pair2)
     # BA_scale_factor_pair3, BA_scaled_translation_pair3 = scale_translation(cam2_BAtrans, real_distance_cm_pair3)
 
@@ -1358,13 +1798,15 @@ if __name__ == '__main__':
     reproj_error_pair3 = calculate_reprojection_error(cam520, points_pair3, filtered_keypoints_pair3_520, R_recoverPose_pair3, scaled_translation_pair3)
 
     # Reprojection error after BA
-    BA_reproj_error_pair1 = calculate_reprojection_error(cam520, optimized_points, filtered_keypoints_pair3_520, cam2_BArot, BA_scaled_translation_pair1)
+    #BA_reproj_error_pair1 = calculate_reprojection_error(cam520, optimized_points, filtered_keypoints_pair3_520, cam2_BArot, BA_scaled_translation_pair1)
+    BA_reproj_error_pair1 = calculate_reprojection_error(cam520, optimized_points, filtered_keypoints2_charuco,
+                                                         cam2_BArot, cam2_BAtrans)
     # BA_reproj_error_pair2 = calculate_reprojection_error(cam536, points_cam1_cam3, filtered_keypoints_pair2_536, cam3_BArot, cam3_BAtrans)
     # BA_reproj_error_pair3 = calculate_reprojection_error(cam520, points_cam1_cam4, filtered_keypoints_pair3_520, cam4_BArot, cam4_BAtrans)
 
     # Visualize reprojections
     vis_initial = visualize_reprojections(images_pair3_520_viz,cam520 , R_recoverPose_pair3, scaled_translation_pair3, points_pair3, filtered_keypoints_pair3_520,'visualizations/initial.png')
-    vis_optimized = visualize_reprojections(images_pair3_520_viz, cam520, cam2_BArot, BA_scaled_translation_pair1, optimized_points, filtered_keypoints_pair3_520,'visualizations/BA.png')
+    vis_optimized = visualize_reprojections(images_pair3_520_viz, cam520, cam2_BArot, cam2_BAtrans, optimized_points, filtered_keypoints1_charuco,'visualizations/BA.png')
 
     # Display the images
     cv2.imshow("Initial Projections", vis_initial)
@@ -1412,22 +1854,22 @@ if __name__ == '__main__':
     num_keypoints_pair2 = len(filtered_keypoints_pair2_517)
     num_keypoints_pair3 = len(filtered_keypoints_pair3_517)
 
-    # Print results
-    # print('Pair 1 - translation from camera 517 to 518 - UBIQISENSE PIPELINE:', "[-483.67437729 -122.77347367  348.15576036] (cm) ")
-    # print('Pair 1 - translation from camera 517 to 518 - recoverPose:', scaled_translation_pair1.ravel())
-    # print('Pair 1 - rotation from camera 517 to 518 - UBIQISENSE PIPELINE:', "( 47.95943056 -67.13253629 -62.56659299) (deg.) ")
-    # print('Pair 1 - rotation from camera 517 to 518 - recoverPose:', rot_decomp_pair1)
-    # print('Pair 1 - scale factor:', scale_factor_pair1)
-    # print('Number of keypoints:', num_keypoints_pair1, "/ Threshold: ", threshold_pair1, "/ Reprojection error:", reproj_error_pair1)
-    # print('')
-    #
-    # print('Pair 2 - translation from camera 517 to 536 - UBIQISENSE PIPELINE:', "[-188.76428849 -211.59882113  731.79469696] (cm) ")
-    # print('Pair 2 - translation from camera 517 to 536 - recoverPose:', scaled_translation_pair2.ravel())
-    # print('Pair 2 - rotation from camera 517 to 536 - UBIQISENSE PIPELINE:', "( 150.39854946   13.33519403 -177.79742376) (deg.) ")
-    # print('Pair 2 - rotation from camera 517 to 536 - recoverPose:', rot_decomp_pair2)
-    # print('Pair 2 - scale factor:', scale_factor_pair2)
-    # print('Number of keypoints:', num_keypoints_pair2, "/ Threshold: ", threshold_pair2, "/ Reprojection error:", reproj_error_pair2)
-    # print('')
+    #Print results
+    print('Pair 1 - translation from camera 517 to 518 - UBIQISENSE PIPELINE:', "[-483.67437729 -122.77347367  348.15576036] (cm) ")
+    print('Pair 1 - translation from camera 517 to 518 - recoverPose:', scaled_translation_pair1.ravel())
+    print('Pair 1 - rotation from camera 517 to 518 - UBIQISENSE PIPELINE:', "( 47.95943056 -67.13253629 -62.56659299) (deg.) ")
+    print('Pair 1 - rotation from camera 517 to 518 - recoverPose:', rot_decomp_pair1)
+    print('Pair 1 - scale factor:', scale_factor_pair1)
+    print('Number of keypoints:', num_keypoints_pair1, "/ Threshold: ", threshold_pair1, "/ Reprojection error:", reproj_error_pair1)
+    print('')
+
+    print('Pair 2 - translation from camera 517 to 536 - UBIQISENSE PIPELINE:', "[-188.76428849 -211.59882113  731.79469696] (cm) ")
+    print('Pair 2 - translation from camera 517 to 536 - recoverPose:', scaled_translation_pair2.ravel())
+    print('Pair 2 - rotation from camera 517 to 536 - UBIQISENSE PIPELINE:', "( 150.39854946   13.33519403 -177.79742376) (deg.) ")
+    print('Pair 2 - rotation from camera 517 to 536 - recoverPose:', rot_decomp_pair2)
+    print('Pair 2 - scale factor:', scale_factor_pair2)
+    print('Number of keypoints:', num_keypoints_pair2, "/ Threshold: ", threshold_pair2, "/ Reprojection error:", reproj_error_pair2)
+    print('')
 
     print('Pair 3 - translation from camera 517 to 520 - UBIQISENSE PIPELINE:', "[306.34257461 -94.6791296  380.83349388] (cm) ")
     print('Pair 3 - rotation from camera 517 to 520 - UBIQISENSE PIPELINE:', "( 132.62900666  69.60734076 151.97386786) (deg.) ")
@@ -1439,7 +1881,7 @@ if __name__ == '__main__':
 
     # Bundle Adjustment Results
     print('Bundle Adjustment Results')
-    print('Pair 1 - translation from camera 517 to 520 - BA:', BA_scaled_translation_pair1.ravel())
+    print('Pair 1 - translation from camera 517 to 520 - BA:', cam2_BAtrans.ravel())
     print('Pair 1 - rotation from camera 517 to 520 - BA:', BA_rot_decomp_pair1)
     #print('Pair 1 - scale factor:', BA_scale_factor_pair1)
     print('')
@@ -1451,6 +1893,36 @@ if __name__ == '__main__':
     # print('Pair 3 - rotation from camera 517 to 520 - BA:', BA_rot_decomp_pair3)
     # print('Pair 3 - scale factor:', BA_scale_factor_pair3)
     # print('')
+
+    # Absolution position solvePnP
+    D3_points = np.array([[0, 0, 0], [3, 3, 200], [300, 130, 0], [300,130,70]])
+    D2_points = np.array([[81, 365], [55, 45], [411, 548], [418, 510]])
+
+    rvec, tvec = estimate_solvePnP( D3_points, D2_points, cam536)
+    # rvec = decompose_rotation(rvec)
+    # R_recoverPose_pair2, t_recoverPose_pair2
+
+    # Given data
+    R_rel = R_recoverPose_pair2
+    t_rel = scaled_translation_pair2
+    R_abs_cam2 = rvec
+    t_abs_cam2 = tvec
+
+    # Step 1: Inverse of the relative transformation from recoverPose
+    R_rel_inverse = R_rel.T
+    t_rel_inverse = -np.dot(R_rel.T, t_rel)
+    # Step 2: Compute the absolute rotation and translation of Camera 1
+    R_abs_cam1 = np.dot(R_rel, R_abs_cam2)
+    t_abs_cam1 = t_rel + np.dot(R_rel, t_abs_cam2)
+
+
+    R_abs_cam1 = decompose_rotation(R_abs_cam1)
+    print('rvec:')
+    print(R_abs_cam1)
+    print('tvec:')
+    print(t_abs_cam1)
+
+
 
     #overlay_images(sorted(glob(f"{args.image_path_pair1_517_518}/517*.png")),filtered_keypoints_pair1_517)
     #draw_skeleton(images_common_517, filtered_common_517,  )

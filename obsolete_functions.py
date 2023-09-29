@@ -191,3 +191,103 @@ def reproject_points_solvePnPRefineLM(points_3d, K2, R_solvePnPRefineLM, tvec_re
 
     # Estimate the essential matrix
     E, mask = cv2.findEssentialMat(keypoints1, keypoints2, camera_matrix, method=cv2.RANSAC, prob=0.999, threshold=1)
+
+class BundleAdjustment(g2o.SparseOptimizer):
+    def __init__(self, solver_type, linear_solver):
+        super().__init__()
+        solver_block = solver_type(linear_solver())
+        solver = g2o.OptimizationAlgorithmLevenberg(solver_block)
+        super().set_algorithm(solver)
+        self.set_verbose(True)  # Add this line to enable verbosity
+
+    def optimize(self, max_iterations):
+        self.initialize_optimization()
+        super().optimize(max_iterations)
+
+    def add_pose(self, pose_id, pose, fx, fy, cx, cy, baseline, fixed=False):
+        sbacam = g2o.SBACam(pose.orientation(), pose.position())
+        sbacam.set_cam(fx, fy, cx, cy, baseline)
+        v_se3 = g2o.VertexCam()
+        v_se3.set_id(pose_id)
+        v_se3.set_estimate(sbacam)
+        v_se3.set_fixed(fixed)
+        self.add_vertex(v_se3)
+
+    def add_point(self, point_id, point, fixed=False, marginalized=True):
+        v_p = g2o.VertexPointXYZ()
+        v_p.set_id(point_id * 2 + 1)
+        v_p.set_estimate(point)
+        v_p.set_marginalized(marginalized)
+        v_p.set_fixed(fixed)
+        self.add_vertex(v_p)
+
+    def add_observation_edge(self, point_id, pose_id, measurement, information, robust_kernel_threshold):
+        edge = g2o.EdgeProjectP2MC()
+        edge.set_vertex(0, self.vertex(point_id + len(self.vertices())))
+        edge.set_vertex(1, self.vertex(pose_id))
+        edge.set_measurement(np.array(measurement).reshape(2, 1))
+        edge.set_information(information)
+
+        if robust_kernel_threshold is not None:
+            edge.set_robust_kernel(g2o.RobustKernelHuber(robust_kernel_threshold))
+
+        self.add_edge(edge)
+
+    def get_pose(self, pose_id):
+        return self.vertex(pose_id).estimate()
+
+    def get_point(self, point_id):
+        vertex = self.vertex(point_id * 2 + 1)
+        if isinstance(vertex, g2o.VertexPointXYZ):
+            return np.array(vertex.estimate())
+        else:
+            print(f"Warning: Point with ID {point_id} was not retrieved correctly!")
+            return None
+
+def perform_bundle_adjustment_with_class(points, cam_matrices, rotations, translations, keypoints_list,
+                                          num_iterations,
+                                          robust_kernel_threshold,
+                                          information_matrices_list,
+                                          solver_type,
+                                          linear_solver):
+    # Create an instance of the BundleAdjustment class
+    ba = BundleAdjustment(solver_type=solver_type, linear_solver=linear_solver)
+
+    # Add camera poses
+    for i, (R, t) in enumerate(zip(rotations, translations)):
+        pose = g2o.Isometry3d(R, t)
+        fx, fy, cx, cy = cam_matrices[i][0, 0], cam_matrices[i][1, 1], cam_matrices[i][0, 2], cam_matrices[i][1, 2]
+        baseline = 0  # Modify as needed
+        fixed = (i == 0)
+        ba.add_pose(pose_id=i, pose=pose, fx=fx, fy=fy, cx=cx, cy=cy, baseline=baseline, fixed=fixed)
+
+    # Add 3D points and their observations
+    for point_id, point in enumerate(points):
+        ba.add_point(point_id=point_id, point=point)
+
+        # Add edges for observations from both cameras
+        for cam_id in [0, 1]:
+            measurement = keypoints_list[cam_id][point_id]
+            #information = information_matrices_list[cam_id][point_id]
+            information = np.identity(2)
+            ba.add_observation_edge(point_id=point_id, pose_id=cam_id, measurement=measurement,
+                        information=information, robust_kernel_threshold=robust_kernel_threshold)
+
+    # Optimize
+    ba.optimize(max_iterations=num_iterations)
+
+    # Extract the optimized camera poses and points
+    optimized_poses = [ba.get_pose(pose_id=i) for i in range(len(rotations))]
+    #optimized_points = [np.array(ba.get_point(point_id=i)).reshape(-1) for i in range(len(points)) if ba.get_point(point_id=i) is not None]
+
+    optimized_points = []
+    missing_point_ids = []
+    for i in range(len(points)):
+        point = ba.get_point(point_id=i)
+        if point is not None:
+            optimized_points.append(np.array(point).reshape(-1))
+        else:
+            missing_point_ids.append(i)
+
+
+    return optimized_points, optimized_poses, missing_point_ids
